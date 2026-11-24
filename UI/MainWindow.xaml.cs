@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly CrashGuard crashGuard = new();
     private readonly PendingSave pendingSave;
     private readonly EventWaitHandle activation;
+    private readonly EventWaitHandle shutdown = new(false, EventResetMode.AutoReset, Maintenance.ExitEventName);
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly Forms.NotifyIcon tray;
     private readonly Icon trayIcon;
@@ -67,6 +68,7 @@ public partial class MainWindow : Window
     }
     private void Tick(object? sender, EventArgs e)
     {
+        if (shutdown.WaitOne(0)) { Exit(); return; }
         if (activation.WaitOne(0)) ShowWindow();
         controller.Tick();
         StatusText.Text = controller.Status;
@@ -83,7 +85,7 @@ public partial class MainWindow : Window
         if (lastGraphMinute != minute) { lastGraphMinute = minute; Editor.CurrentMinute = minute; ProfilePreview.CurrentMinute = minute; Editor.InvalidateVisual(); ProfilePreview.InvalidateVisual(); }
         tray.Text = ("Night Light Control · " + (applying ? $"{controller.CurrentStrength:0} %" : "en pausa"));
         if (pendingSave.IsDue) Save();
-        timer.Interval = TimeSpan.FromMilliseconds(controller.IsTransitioning || dirty && pendingSave.LastError == null ? 250 : 1000);
+        timer.Interval = TimeSpan.FromMilliseconds(controller.IsTransitioning || controller.IsRefreshingDisplays || dirty && pendingSave.LastError == null ? 250 : 1000);
     }
     private void MarkDirty()
     {
@@ -260,7 +262,7 @@ public partial class MainWindow : Window
         try { Settings.StartWithWindows = StartupCheck.IsChecked == true; } catch (Exception ex) { StartupCheck.IsChecked = Settings.StartWithWindows; MessageBox.Show(this, ex.Message, "Inicio con Windows"); }
     }
     private void OpenWindows(object sender, RoutedEventArgs e) { try { Process.Start(new ProcessStartInfo("ms-settings:nightlight") { UseShellExecute = true }); } catch (Exception ex) { MessageBox.Show(this, ex.Message); } }
-    private void DisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() => controller.Refresh());
+    private void DisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() => { controller.Refresh(); timer.Interval = TimeSpan.FromMilliseconds(250); Tick(null, EventArgs.Empty); });
     private void PowerChanged(object sender, PowerModeChangedEventArgs e) => Dispatcher.BeginInvoke(() => { if (e.Mode == PowerModes.Suspend) { controller.Suspended = true; controller.TryRestore(); } else if (e.Mode == PowerModes.Resume) { controller.Suspended = false; controller.Refresh(); } });
     private void SessionChanged(object sender, SessionSwitchEventArgs e) => Dispatcher.BeginInvoke(() => { if (e.Reason == SessionSwitchReason.SessionLock) { controller.SessionLocked = true; controller.TryRestore(); } else if (e.Reason == SessionSwitchReason.SessionUnlock) { controller.SessionLocked = false; controller.Refresh(); } });
     private void SessionEnding(object sender, SessionEndingEventArgs e) => Dispatcher.Invoke(() => controller.TryRestore());

@@ -74,6 +74,12 @@ Assert(!Updates.IsOfficialAsset(official.Replace("https:", "http:")), "Updater r
 var release = Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("v0.8.0", official), Release("v0.9.0", official), Release("v1.0.0", official, true) }));
 Assert(release?.Tag == "v0.9.0" && release.Sha256 == sampleHash, "Updater selects newest non-draft version");
 Assert(Updates.ParseReleases("[]") == null, "Updater handles no release");
+string setupAsset = "NightLightControl-0.9.0-Setup.exe";
+string installerJson = JsonSerializer.Serialize(new[] { new { tag_name = "v0.9.0", draft = false, assets = new[] { new { name = setupAsset, browser_download_url = Updates.RepositoryUrl + "/releases/download/v0.9.0/" + setupAsset, size = 100, digest = "sha256:" + sampleHash } } } });
+Assert(Updates.ParseReleases(installerJson, preferInstaller: true)?.IsInstaller == true, "Installed application selects installer updates");
+Assert(Updates.ParseReleases(installerJson) == null, "Portable mode does not silently switch to installer");
+Reject(() => Installation.EntryPath(Path.GetTempPath(), "../outside.exe"), "Installer rejects ZIP traversal");
+Reject(() => Installation.EntryPath(Path.GetTempPath(), "docs/../NightLightControl.exe"), "Installer rejects alias paths");
 Assert(Updates.ParseReleases(JsonSerializer.Serialize(new object[] { new { bad = "entry" }, Release("v0.9.0", official) }))?.Tag == "v0.9.0", "Malformed release does not hide a valid update");
 Assert(Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("v9.0.0", official, hash: "bad"), Release("v0.9.0", official) }))?.Tag == "v0.9.0", "Invalid digest does not block other valid releases");
 Assert(Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("invalid", official) })) == null, "Updater skips unknown version format");

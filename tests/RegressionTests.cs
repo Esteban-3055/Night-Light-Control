@@ -45,6 +45,16 @@ internal static class RegressionTests
             assert(!controller.IsApplying && controller.Status.Contains("prueba.exe"), "Foreground exclusion restores color");
             blocked = null; Tick(); Settle(); controller.Suspended = true; Tick(); writes = display.Applied.Count;
             Tick(); assert(display.Applied.Count == writes, "Suspended state stays inactive");
+            controller.Suspended = false; controller.Refresh(); Tick(); Settle();
+            double warmth = controller.CurrentStrength; writes = display.Applied.Count;
+            display.RefreshFailures = 3; controller.Refresh(); Tick(); Tick(); Tick();
+            assert(settings.Enabled && controller.IsApplying && controller.IsRefreshingDisplays, "Projection changes preserve enabled state and color ownership");
+            assert(display.Applied.Count == writes, "Temporary missing displays do not cause a neutral-color write");
+            near(controller.CurrentStrength, warmth, "Warmth is retained while switching display topology");
+            Tick(); assert(!controller.IsRefreshingDisplays && display.Applied.Last() == Curve.Kelvin(warmth), "Remaining display receives existing warmth immediately after reconnection");
+            controller.Refresh(); display.FailNext = true; Tick();
+            assert(controller.IsRefreshingDisplays && settings.Enabled && controller.IsApplying, "Apply failure during projection switch is retried without disabling");
+            Tick(); assert(controller.LastError == null && !controller.IsRefreshingDisplays, "Projection transition recovers on the next display retry");
         }
 
         var now = date; bool refuseWrite = true; int saves = 0;
@@ -137,10 +147,11 @@ internal static class RegressionTests
     {
         public List<int> Applied { get; } = new();
         public bool FailNext { get; set; }
+        public int RefreshFailures { get; set; }
         public bool HasApplied { get; private set; }
         public string Description => "Simulated display";
         public string Backend => "Simulation";
-        public void Refresh() { }
+        public void Refresh() { if (RefreshFailures > 0) { RefreshFailures--; throw new IOException("Injected temporary display topology change"); } }
         public void Apply(int kelvin) { HasApplied = true; if (FailNext) { FailNext = false; throw new IOException("Injected display failure"); } Applied.Add(kelvin); }
         public void Dispose() { }
     }

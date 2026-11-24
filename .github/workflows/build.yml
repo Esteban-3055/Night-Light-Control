@@ -20,6 +20,12 @@ jobs:
       - name: Test and build portable
         shell: pwsh
         run: ./scripts/Build-Portable.ps1
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./scripts/Build-Installer.ps1
+      - name: Test installation and removal
+        shell: pwsh
+        run: ./scripts/Test-Installer.ps1
       - name: Render interface without opening windows
         shell: pwsh
         run: dotnet run --project tests/Preview/Preview.csproj -c Release -- . output/previews
@@ -29,6 +35,7 @@ jobs:
           path: |
             dist/NightLightControl-*-win-x64.zip
             dist/SHA256SUMS.txt
+            dist/*-Setup.exe
             output/previews/*.png
           if-no-files-found: error
           compression-level: 0
@@ -42,5 +49,6 @@ jobs:
         run: |
           $version = $env:RELEASE_TAG.TrimStart('v')
           $archive = "./dist/NightLightControl-$version-win-x64.zip"
-          gh release create $env:RELEASE_TAG $archive ./dist/NightLightControl/NightLightControl.exe ./dist/SHA256SUMS.txt --verify-tag --prerelease --title "Night Light Control $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md
+          $setup = "./dist/NightLightControl-$version-Setup.exe"
+          gh release create $env:RELEASE_TAG $archive $setup ./dist/NightLightControl/NightLightControl.exe ./dist/SHA256SUMS.txt --verify-tag --prerelease --title "Night Light Control $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md
           if ($LASTEXITCODE -ne 0) { throw 'No se pudo publicar la versión.' }

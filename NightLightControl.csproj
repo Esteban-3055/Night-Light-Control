@@ -10,10 +10,10 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/NightLightControl.ico</ApplicationIcon>
-    <DefaultItemExcludes>$(DefaultItemExcludes);output/**;dist/**;research/**;.tools/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);output/**;dist/**;research/**;.tools/**;Setup/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup><Compile Remove="tests/**/*.cs" /></ItemGroup>
 </Project>

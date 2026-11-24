@@ -18,6 +18,7 @@ public sealed class Controller : IDisposable
     public Action<bool>? OwnershipChanged { get; set; }
     public Action<string> ErrorLog { get; set; } = Log;
     private double lastSeconds, lastApplySeconds = -100, lastConflictCheck = -100, lastErrorSeconds = -100;
+    private double displayChangeUntil = -100, nextDisplayRetry, displayRetryStarted = -1, lastDisplayLog = -100;
     private bool fluxRunning, needsRefresh = true, ownsColor;
     private int lastKelvin = -1;
     private double? appliedStrength;
@@ -31,6 +32,7 @@ public sealed class Controller : IDisposable
     public bool IsApplying => ownsColor && LastError == null;
     public bool IsFadingOut { get; private set; }
     public bool IsTransitioning => ownsColor && appliedStrength.HasValue && Math.Abs(TargetStrength - appliedStrength.Value) > 0.001;
+    public bool IsRefreshingDisplays => needsRefresh;
     public bool Available { get; private set; }
     public bool SessionLocked { get; set; }
     public bool Suspended { get; set; }
@@ -48,7 +50,7 @@ public sealed class Controller : IDisposable
         this.secondsNow = secondsNow; this.localNow = localNow; this.detectFlux = detectFlux;
         this.foregroundBlock = foregroundBlock ?? ActiveExclusion;
     }
-    public void Refresh() { needsRefresh = true; lastApplySeconds = -100; }
+    public void Refresh() { needsRefresh = true; lastApplySeconds = -100; nextDisplayRetry = 0; displayRetryStarted = secondsNow(); displayChangeUntil = secondsNow() + 5; LastError = null; }
     public void Pause(TimeSpan duration) { PauseUntil = localNow().Add(duration); }
     public void Resume() { PauseUntil = null; }
     public void Tick()
@@ -60,7 +62,10 @@ public sealed class Controller : IDisposable
             if (SessionLocked || Suspended) { Restore(); Status = "En pausa: sesión suspendida"; LastError = null; return; }
             if (needsRefresh)
             {
-                engine.Refresh(); Displays = engine.Description; Backend = engine.Backend; Available = true; needsRefresh = false;
+                if (seconds < nextDisplayRetry) return;
+                try { engine.Refresh(); }
+                catch (Exception ex) { RetryDisplayChange(ex, seconds); return; }
+                Displays = engine.Description; Backend = engine.Backend; Available = true; needsRefresh = false; displayRetryStarted = -1;
             }
             if (!Settings.Enabled && !ownsColor) { Status = "Control desactivado"; LastError = null; return; }
             var native = readNative(); var now = localNow();
@@ -94,10 +99,21 @@ public sealed class Controller : IDisposable
         }
         catch (Exception ex)
         {
+            if (seconds <= displayChangeUntil) { RetryDisplayChange(ex, seconds); return; }
             ErrorLog(ex.ToString()); Available = false; needsRefresh = true; lastErrorSeconds = seconds;
             try { Restore(); } catch (Exception restore) { ErrorLog("Restauración pendiente: " + restore); }
             LastError = ex.Message; Status = "No se pudo aplicar: " + ex.Message;
         }
+    }
+    private void RetryDisplayChange(Exception error, double seconds)
+    {
+        // Display topology may disappear briefly while Windows switches outputs.
+        // Preserve ownership and current warmth; do not restore neutral or turn off settings.
+        if (displayRetryStarted < 0) displayRetryStarted = seconds;
+        needsRefresh = true; Available = false; LastError = null; lastApplySeconds = -100;
+        nextDisplayRetry = seconds + (seconds - displayRetryStarted < 10 ? .25 : 1);
+        Status = "Reconectando pantallas… se conserva el control";
+        if (seconds - lastDisplayLog >= 5) { ErrorLog("Cambio de pantalla: " + error.Message); lastDisplayLog = seconds; }
     }
     private static double Strength(int kelvin) => Math.Clamp((6500 - kelvin) / 53.0, 0, 100);
     private void ReleaseOwnership() { OwnershipChanged?.Invoke(false); ownsColor = false; appliedStrength = null; IsFadingOut = false; lastKelvin = -1; }

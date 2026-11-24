@@ -10,8 +10,8 @@ using System.Threading.Tasks;
 
 namespace NightLightControl.Core;
 
-public sealed record AppRelease(Version Version, string Tag, string PageUrl, string DownloadUrl, string? ChecksumUrl, string? Sha256, long Size);
-public sealed record DownloadedUpdate(string FilePath, string Sha256);
+public sealed record AppRelease(Version Version, string Tag, string PageUrl, string DownloadUrl, string? ChecksumUrl, string? Sha256, long Size, string AssetName = "NightLightControl.exe", bool IsInstaller = false);
+public sealed record DownloadedUpdate(string FilePath, string Sha256, bool IsInstaller = false);
 
 public static class Updates
 {
@@ -34,7 +34,7 @@ public static class Updates
         if (value.Length != 64 || !value.All(Uri.IsHexDigit)) throw new InvalidDataException("La suma de verificación de la actualización no es válida.");
         return value.ToLowerInvariant();
     }
-    public static AppRelease? ParseReleases(string json)
+    public static AppRelease? ParseReleases(string json, bool preferInstaller = false)
     {
         using var document = JsonDocument.Parse(json); AppRelease? newest = null;
         foreach (var item in document.RootElement.EnumerateArray())
@@ -50,6 +50,12 @@ public static class Updates
                 if (asset.GetProperty("name").GetString() == "NightLightControl.exe") executable = asset;
                 if (asset.GetProperty("name").GetString() == "SHA256SUMS.txt") checksum = asset;
             }
+            string assetName = "NightLightControl.exe";
+            if (preferInstaller)
+            {
+                assetName = "NightLightControl-" + version.ToString(3) + "-Setup.exe"; executable = null;
+                foreach (var asset in item.GetProperty("assets").EnumerateArray()) if (asset.GetProperty("name").GetString() == assetName) executable = asset;
+            }
             if (executable == null) continue;
             string url = executable.Value.GetProperty("browser_download_url").GetString() ?? "";
             if (!IsOfficialAsset(url)) continue;
@@ -61,7 +67,7 @@ public static class Updates
             long size = executable.Value.GetProperty("size").GetInt64();
             if (size is <= 0 or > MaximumDownload) continue;
             string page = RepositoryUrl + "/releases/tag/" + Uri.EscapeDataString(tag);
-            var release = new AppRelease(version, tag, page, url, checksumUrl, hash, size);
+            var release = new AppRelease(version, tag, page, url, checksumUrl, hash, size, assetName, preferInstaller);
             if (newest == null || release.Version > newest.Version) newest = release;
             }
             catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or System.Collections.Generic.KeyNotFoundException or FormatException or OverflowException)
@@ -77,7 +83,7 @@ public static class Updates
         using var request = new HttpRequestMessage(HttpMethod.Get, ApiUrl);
         request.Headers.Accept.ParseAdd("application/vnd.github+json"); request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
         using var response = await Client.SendAsync(request, timeout.Token).ConfigureAwait(false); response.EnsureSuccessStatusCode();
-        return ParseReleases(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false));
+        return ParseReleases(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false), Installation.IsInstalled);
     }
     public static async Task<DownloadedUpdate> DownloadAsync(AppRelease release, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
@@ -88,12 +94,12 @@ public static class Updates
             if (release.ChecksumUrl == null || !IsOfficialAsset(release.ChecksumUrl)) throw new InvalidDataException("Falta la verificación de la descarga.");
             string sums = await Client.GetStringAsync(release.ChecksumUrl, cancellationToken).ConfigureAwait(false);
             expected = sums.Split('\n').Select(line => line.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
-                .Where(parts => parts.Length == 2 && parts[1].TrimStart('*') == "NightLightControl.exe").Select(parts => parts[0]).SingleOrDefault();
+                .Where(parts => parts.Length == 2 && parts[1].TrimStart('*') == release.AssetName).Select(parts => parts[0]).SingleOrDefault();
             if (expected == null) throw new InvalidDataException("La versión publicada no incluye la verificación del ejecutable.");
         }
         expected = NormalizeHash(expected);
         string folder = Path.Combine(UpdateFolder, Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
-        string path = Path.Combine(folder, "NightLightControl.exe");
+        string path = Path.Combine(folder, release.IsInstaller ? "NightLightControl-Setup.exe" : "NightLightControl.exe");
         try
         {
             using var response = await Client.GetAsync(release.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false); response.EnsureSuccessStatusCode();
@@ -110,7 +116,7 @@ public static class Updates
                 }
                 if (total != release.Size) throw new InvalidDataException("La descarga está incompleta.");
             }
-            VerifyFile(path, expected); progress?.Report(100); return new(path, expected);
+            VerifyFile(path, expected); progress?.Report(100); return new(path, expected, release.IsInstaller);
         }
         catch { if (File.Exists(path)) File.Delete(path); if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder); throw; }
     }
@@ -127,13 +133,13 @@ public static class Updates
         ValidateTarget(target);
         string helper = Path.Combine(Path.GetDirectoryName(source)!, "UpdateHelper.exe"); File.Copy(target, helper, false);
         var start = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(helper)! };
-        foreach (string value in new[] { "--apply-update", source, target, Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture), download.Sha256 }) start.ArgumentList.Add(value);
+        foreach (string value in new[] { download.IsInstaller ? "--apply-installer" : "--apply-update", source, target, Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture), download.Sha256 }) start.ArgumentList.Add(value);
         using var helperProcess = Process.Start(start) ?? throw new InvalidOperationException("No se pudo iniciar la instalación.");
     }
     private static string ValidateSource(string source)
     {
         string full = Path.GetFullPath(source), root = Path.GetFullPath(UpdateFolder) + Path.DirectorySeparatorChar;
-        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(full) != "NightLightControl.exe") throw new InvalidDataException("Ruta de actualización no válida.");
+        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(full) is not ("NightLightControl.exe" or "NightLightControl-Setup.exe")) throw new InvalidDataException("Ruta de actualización no válida.");
         return full;
     }
     private static void ValidateTarget(string target)
@@ -153,11 +159,18 @@ public static class Updates
     {
         try
         {
-            if (args.Length != 5 || args[0] != "--apply-update" || !int.TryParse(args[3], out int pid) || pid <= 0 || pid == Environment.ProcessId) throw new InvalidDataException("Parámetros de actualización no válidos.");
+            if (args.Length != 5 || args[0] is not ("--apply-update" or "--apply-installer") || !int.TryParse(args[3], out int pid) || pid <= 0 || pid == Environment.ProcessId) throw new InvalidDataException("Parámetros de actualización no válidos.");
             string source = ValidateSource(args[1]), target = Path.GetFullPath(args[2]); ValidateTarget(target); VerifyFile(source, args[4]);
             try { using var parent = Process.GetProcessById(pid); if (!parent.WaitForExit(30000)) throw new TimeoutException("El programa no terminó a tiempo para actualizarse."); }
             catch (ArgumentException) { }
-            InstallFiles(source, target, args[4]);
+            if (args[0] == "--apply-installer")
+            {
+                var setup = new ProcessStartInfo(source) { UseShellExecute = false, CreateNoWindow = true };
+                foreach (string value in new[] { "--silent", "--dir", Path.GetDirectoryName(target)!, "--startup", Settings.StartWithWindows ? "true" : "false", "--desktop", File.Exists(Installation.DesktopShortcut) ? "true" : "false" }) setup.ArgumentList.Add(value);
+                using var installer = Process.Start(setup) ?? throw new IOException("No se pudo iniciar el instalador."); installer.WaitForExit();
+                if (installer.ExitCode != 0) throw new IOException("El instalador no pudo completar la actualización.");
+            }
+            else InstallFiles(source, target, args[4]);
             Process.Start(new ProcessStartInfo(target) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(target)! })?.Dispose();
             return 0;
         }

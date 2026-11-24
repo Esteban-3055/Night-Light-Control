@@ -16,8 +16,11 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Contains("--shutdown")) { Maintenance.RequestExit(); return 0; }
+        if (args.Contains("--uninstall-worker")) return Maintenance.UninstallWorker(args);
+        if (args.Contains("--uninstall")) return Maintenance.Uninstall(args);
         if (args.Contains("--recover-after-exit")) return CrashRecovery.Run(args);
-        if (args.Contains("--apply-update")) return Updates.ApplyUpdate(args);
+        if (args.Contains("--apply-update") || args.Contains("--apply-installer")) return Updates.ApplyUpdate(args);
         if (args.Contains("--enable-startup")) Settings.StartWithWindows = true;
         if (args.Contains("--check-updates"))
         {

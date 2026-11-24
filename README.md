@@ -1,7 +1,7 @@
 # Night Light Control
 
 Aplicación para Windows 11 x64 que ajusta la Luz nocturna nativa siguiendo una
-curva diaria dibujada por el usuario. Versión preliminar: **0.3.0**.
+curva diaria dibujada por el usuario. Versión preliminar: **0.4.0**.
 
 [Descargas para Windows x64](https://github.com/Esteban-3055/Night-Light-Control/releases)
 · [Compilaciones y comprobaciones](https://github.com/Esteban-3055/Night-Light-Control/actions)
@@ -14,6 +14,17 @@ luminoso. La barra lateral da acceso a **Curva diaria**, **Perfiles** y
 valores de ejemplo, sin controlar una pantalla física.
 
 ## Uso
+
+Para una instalación normal, descarga **NightLightControl-0.4.0-Setup.exe** desde
+[las versiones publicadas](https://github.com/Esteban-3055/Night-Light-Control/releases).
+El instalador añade el programa a Inicio y a Aplicaciones instaladas, con un
+desinstalador, y permite crear un acceso en el escritorio. No necesita permisos
+de administrador. Por defecto utiliza `%LOCALAPPDATA%\Programs\Night Light Control`.
+La versión ZIP continúa disponible como portable.
+
+Los perfiles existentes se conservan automáticamente en su carpeta local. El
+inicio con Windows pasa a apuntar a la instalación nueva. No se eliminan las
+carpetas del proyecto ni las copias portables previas.
 
 1. Cierra f.lux u otros programas que ajusten el color.
 2. Abre `NightLightControl.exe`.
@@ -56,6 +67,16 @@ preferencias permanecen en su carpeta local; se conserva el ejecutable anterior
 como `NightLightControl.exe.previous`. La actualización requiere permiso de
 escritura en la carpeta portable.
 
+En una instalación registrada, el actualizador descarga el instalador de la
+versión nueva. Lo ejecuta después de cerrar y restaurar el programa, conserva
+las preferencias de inicio y escritorio, y actualiza el registro de Windows.
+La versión portable sigue actualizando solo su ejecutable.
+
+Para desinstalar, utiliza **Configuración → Aplicaciones → Aplicaciones
+instaladas → Night Light Control → Desinstalar**. Se conservan los perfiles y
+preferencias en `%LOCALAPPDATA%\NightLightControl`. El programa y sus accesos se
+eliminan; los archivos de usuario ajenos a la instalación se conservan.
+
 ![Sección de actualizaciones](docs/updates.png)
 
 Cerrar la ventana mantiene el programa en la bandeja. Para terminar, utiliza
@@ -76,6 +97,11 @@ El cierre normal, la desactivación y las pausas restauran la temperatura que
 Windows solicita en ese momento. El control se suspende mientras se utiliza
 la vista previa del deslizador nativo de Windows o si f.lux está abierto.
 La aplicación atiende los cambios de pantalla, suspensión y desbloqueo.
+Al cambiar la proyección de Windows, conserva la intención de control y la
+intensidad mientras se reconstruye la lista de pantallas. Reintenta las salidas
+que desaparecen temporalmente y reaplica la calidez en la pantalla restante.
+Windows o el controlador gráfico pueden seguir provocando una transición visible
+durante el cambio de modo; no se ha validado físicamente cada combinación de TV.
 
 Si utilizas el horario propio de Windows, desactívalo manualmente para que no
 compita con tu curva. La aplicación no modifica ese ajuste.
@@ -119,6 +145,7 @@ Requiere .NET SDK 10 para compilar:
 dotnet build -c Release
 dotnet run --project tests/NightLightControl.Tests.csproj -c Release
 ./scripts/Build-Portable.ps1
+./scripts/Build-Installer.ps1
 ```
 
 El script comprueba el código y genera el ejecutable, el ZIP y sus sumas SHA256.

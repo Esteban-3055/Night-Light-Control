@@ -1,22 +1,20 @@
-Night Light Control 0.3.0 incorpora guardado explícito, desactivación gradual y
-protección frente a cierres inesperados.
+Night Light Control 0.4.0 incorpora instalación normal para el usuario de Windows.
 
-- Botón **Guardar curva**, compatible con el guardado automático.
-- Fade-out al desactivar, con el mismo ritmo del fade-in y sin saltos al reactivar.
-- Indicador de calidez visible hasta terminar la salida.
-- Protección opcional con un auxiliar independiente que intenta restaurar el
-  color solicitado por Windows cuando se cierra inesperadamente el proceso.
-- Corrección de cambios perdidos tras un fallo de escritura y recuperación de
-  configuraciones bloqueadas/dañadas con conservación del archivo original.
-- Respeto de la vista previa nativa de Windows al desactivar o salir.
-- Correcciones en decimales de intensidad, pantalla virtual incompatible y
-  entradas incompletas en la lista de versiones de GitHub.
+- Instalador propio **NightLightControl-0.4.0-Setup.exe**, sin administrador.
+- Carpeta fija de programa, acceso en Inicio y escritorio opcional.
+- Entrada en Aplicaciones instaladas, versión y desinstalador.
+- Migración del inicio con Windows y conservación de perfiles existentes.
+- Actualizaciones mediante el instalador para mantener actualizado el registro
+  de Windows; el modo portable continúa usando la actualización del ejecutable.
+- Cierre cooperativo para mantenimiento, con restauración del color.
+- Corrección del control al pasar de proyección ampliada a solo segunda pantalla:
+  conserva la calidez y reintenta/reaplica al restablecerse las salidas de Windows.
 
-Se conservan los perfiles existentes. Para actualizar desde la aplicación, entra
-en **Actualizaciones**, busca la versión y pulsa **Descargar e instalar**.
+La instalación predeterminada utiliza `%LOCALAPPDATA%\Programs\Night Light Control`.
+La desinstalación conserva los perfiles en `%LOCALAPPDATA%\NightLightControl`.
+Los componentes auxiliares y registros de diagnóstico de esa carpeta también
+se conservan. No se elimina el proyecto ni las copias portables previas.
 
-Las pruebas cubren el motor con pantallas y reloj simulados, fallos de guardado,
-procesos de recuperación y renderizado de la interfaz sin control remoto. No se
-ha provocado un cierre con cambios de color en las pantallas del usuario. La
-recuperación no puede garantizarse si también se termina el auxiliar o Windows
-no admite la restauración. Consulta el informe de revisión incluido.
+Para instalar, descarga el archivo **Setup.exe** de esta versión y pulsa Instalar.
+El ZIP sigue disponible para uso portable. Las pruebas no modifican los colores
+de las pantallas del usuario.
