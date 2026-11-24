@@ -1,0 +1,8 @@
+bin/
+obj/
+.tools/
+output/
+dist/
+.vs/
+*.binlog
+*.user
