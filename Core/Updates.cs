@@ -15,8 +15,8 @@ public sealed record DownloadedUpdate(string FilePath, string Sha256);
 
 public static class Updates
 {
-    public const string RepositoryUrl = "https://github.com/Esteban-3055/Night-Light-Control.";
-    private const string ApiUrl = "https://api.github.com/repos/Esteban-3055/Night-Light-Control./releases?per_page=30";
+    public const string RepositoryUrl = "https://github.com/Esteban-3055/Night-Light-Control";
+    private const string ApiUrl = "https://api.github.com/repos/Esteban-3055/Night-Light-Control/releases?per_page=30";
     private const long MaximumDownload = 350_000_000;
     public static Version CurrentVersion => typeof(Updates).Assembly.GetName().Version ?? new Version(0, 0, 0);
     public static string CurrentVersionText => CurrentVersion.ToString(3);
@@ -28,7 +28,7 @@ public static class Updates
         client.DefaultRequestHeaders.UserAgent.ParseAdd("NightLightControl/" + CurrentVersionText);
         return client;
     }
-    public static bool IsOfficialAsset(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && uri.AbsolutePath.StartsWith("/Esteban-3055/Night-Light-Control./releases/download/", StringComparison.OrdinalIgnoreCase);
+    public static bool IsOfficialAsset(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && uri.AbsolutePath.StartsWith("/Esteban-3055/Night-Light-Control/releases/download/", StringComparison.OrdinalIgnoreCase);
     public static string NormalizeHash(string value)
     {
         if (value.Length != 64 || !value.All(Uri.IsHexDigit)) throw new InvalidDataException("La suma de verificación de la actualización no es válida.");

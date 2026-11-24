@@ -59,7 +59,7 @@ object Release(string tag, string assetUrl, bool draft = false, string? hash = n
 };
 string official = Updates.RepositoryUrl + "/releases/download/v0.9.0/NightLightControl.exe";
 Assert(Updates.IsOfficialAsset(official), "Updater accepts own repository");
-Assert(!Updates.IsOfficialAsset("https://github.com.evil.test/Esteban-3055/Night-Light-Control./releases/download/v1/app.exe"), "Updater rejects hostname lookalike");
+Assert(!Updates.IsOfficialAsset("https://github.com.evil.test/Esteban-3055/Night-Light-Control/releases/download/v1/app.exe"), "Updater rejects hostname lookalike");
 Assert(!Updates.IsOfficialAsset("https://github.com/Other/Other/releases/download/v1/app.exe"), "Updater rejects another repository");
 Assert(!Updates.IsOfficialAsset(official.Replace("https:", "http:")), "Updater requires HTTPS");
 var release = Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("v0.8.0", official), Release("v0.9.0", official), Release("v1.0.0", official, true) }));
