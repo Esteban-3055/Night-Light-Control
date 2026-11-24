@@ -26,7 +26,7 @@ Los perfiles existentes se conservan automáticamente en su carpeta local. El
 inicio con Windows pasa a apuntar a la instalación nueva. No se eliminan las
 carpetas del proyecto ni las copias portables previas.
 
-1. Cierra f.lux u otros programas que ajusten el color.
+1. Cierra otras aplicaciones que ajusten el color de la pantalla.
 2. Abre `NightLightControl.exe`.
 3. Arrastra los puntos de la curva para elegir la hora y la intensidad. El eje
    horizontal cubre 24 horas y el vertical va de 0 a 100 %. La curva se repite
@@ -95,7 +95,8 @@ la ejecución sin reescribir esos registros.
 
 El cierre normal, la desactivación y las pausas restauran la temperatura que
 Windows solicita en ese momento. El control se suspende mientras se utiliza
-la vista previa del deslizador nativo de Windows o si f.lux está abierto.
+la vista previa del deslizador nativo de Windows o si se detecta un conflicto
+con otra aplicación de ajuste de color.
 La aplicación atiende los cambios de pantalla, suspensión y desbloqueo.
 Al cambiar la proyección de Windows, conserva la intención de control y la
 intensidad mientras se reconstruye la lista de pantallas. Reintenta las salidas
@@ -160,7 +161,7 @@ dotnet run --project tests/NightLightControl.Tests.csproj -c Release -- --native
 ```
 
 La prueba `--native` cambia brevemente la calidez y la restaura. Cierra la
-aplicación y f.lux antes de ejecutarla. `--diagnose --out archivo.json` solo
+aplicación y otros controladores de color antes de ejecutarla. `--diagnose --out archivo.json` solo
 consulta Windows; `--verify-native --out archivo.json` aplica un cambio pequeño
 durante 1,5 segundos y lo restaura. La distribución portable incluye .NET.
 

@@ -73,7 +73,7 @@ public sealed class Controller : IDisposable
             if (PauseUntil <= now) PauseUntil = null;
             // Never overwrite Windows' own strength-slider preview, even during disable or exit.
             if (native.Preview) { ReleaseOwnership(); Status = "En pausa: ajustando Luz nocturna en Windows"; LastError = null; return; }
-            string? block = fluxRunning ? "En pausa: f.lux está abierto" : PauseUntil.HasValue ? "En pausa hasta las " + PauseUntil.Value.ToLocalTime().ToString("HH:mm") : foregroundBlock();
+            string? block = fluxRunning ? "En pausa: se detectó otra aplicación de ajuste de color" : PauseUntil.HasValue ? "En pausa hasta las " + PauseUntil.Value.ToLocalTime().ToString("HH:mm") : foregroundBlock();
             if (block != null) { Restore(); Status = block; LastError = null; return; }
 
             bool wasFadingOut = IsFadingOut;

@@ -40,7 +40,7 @@ internal static class RegressionTests
             assert(controller.LastError != null && !controller.IsApplying && display.Applied.Last() == 6500, "Failed native write restores Windows and reports failure");
             writes = display.Applied.Count; Tick(); assert(display.Applied.Count == writes, "Native failures use backoff");
             Tick(6); assert(controller.LastError == null && controller.Available && controller.IsApplying, "Native error recovers without restart");
-            Settle(); flux = true; Tick(4); assert(!controller.IsApplying && display.Applied.Last() == 6500, "f.lux conflict releases native color");
+            Settle(); flux = true; Tick(4); assert(!controller.IsApplying && display.Applied.Last() == 6500, "Competing color application releases native control");
             flux = false; Tick(4); Settle(); blocked = "En pausa: prueba.exe"; Tick();
             assert(!controller.IsApplying && controller.Status.Contains("prueba.exe"), "Foreground exclusion restores color");
             blocked = null; Tick(); Settle(); controller.Suspended = true; Tick(); writes = display.Applied.Count;

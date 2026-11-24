@@ -60,7 +60,7 @@ public static class Program
             bool verify = args.Contains("--verify-native"); bool restored = false;
             if (verify)
             {
-                if (System.Diagnostics.Process.GetProcessesByName("flux").Length != 0) throw new InvalidOperationException("Cierra f.lux antes de la prueba de color.");
+                if (System.Diagnostics.Process.GetProcessesByName("flux").Length != 0) throw new InvalidOperationException("Cierra las otras aplicaciones de ajuste de color antes de la prueba.");
                 try { engine.Apply(Math.Max(1200, native.Kelvin - 265)); Thread.Sleep(1500); }
                 finally { engine.Apply(WindowsSettings.Read().Kelvin); restored = true; }
             }

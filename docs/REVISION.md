@@ -34,7 +34,7 @@ hasta tres veces. La vista previa del deslizador nativo tiene prioridad.
 
 Las pruebas ejecutan el controlador real contra una pantalla simulada, incluyen
 fallos de escritura, vista previa de Windows, pausa, bloqueo, suspensión,
-conflicto con f.lux, recuperación de errores y edición persistida. Se terminan
+conflictos con otros controladores de color, recuperación de errores y edición persistida. Se terminan
 procesos de prueba para comprobar la detección de cierre forzado y se ejecuta el
 auxiliar real desarmado, sin acceder al motor nativo. También se generan vistas
 de las cuatro secciones y un tamaño compacto desde el XAML real.
