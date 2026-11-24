@@ -6,6 +6,7 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repository 'dist' }
 [xml]$project = Get-Content (Join-Path $repository 'NightLightControl.csproj')
 $version = [string]$project.Project.PropertyGroup.Version
 $setup = Join-Path $OutputDirectory "NightLightControl-$version-Setup.exe"
+if ((Get-Item -LiteralPath $setup).VersionInfo.FileVersion -ne "$version.0") { throw 'La versión del instalador no coincide con la del programa.' }
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\NightLightControl'
 if (Test-Path -LiteralPath $uninstallKey) { throw 'Ya existe una instalación registrada; no se ejecutará la prueba sobre ella.' }
 if (Get-Process NightLightControl -ErrorAction SilentlyContinue) { throw 'Cierra Night Light Control con Salir y restaurar antes de la prueba.' }

@@ -10,7 +10,7 @@ if (-not ((& $dotnetCommand --list-sdks) -match '^10\.')) { $dotnetCommand = Joi
 $version = [string]$project.Project.PropertyGroup.Version
 $payload = Join-Path $OutputDirectory "NightLightControl-$version-win-x64.zip"
 $setupOutput = Join-Path $OutputDirectory 'setup-build'
-& $dotnetCommand publish (Join-Path $repository 'Setup\Setup.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None "-p:PayloadZip=$payload" -o $setupOutput --nologo
+& $dotnetCommand publish (Join-Path $repository 'Setup\Setup.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None "-p:Version=$version" "-p:PayloadZip=$payload" -o $setupOutput --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Falló la compilación del instalador.' }
 $setup = Join-Path $OutputDirectory "NightLightControl-$version-Setup.exe"
 Copy-Item -LiteralPath (Join-Path $setupOutput 'Setup.exe') -Destination $setup -Force
