@@ -101,17 +101,31 @@ public static class Curve
 {
     public static void Validate(List<CurvePoint>? points)
     {
-        if (points is null || points.Count is < 2 or > 96 || points.Any(p => p == null || p.Minute is < 0 or >= 1440 || !double.IsFinite(p.Strength) || p.Strength is < 0 or > 100) || points.Select(p => p.Minute).Distinct().Count() != points.Count) throw new InvalidDataException("Usa de 2 a 96 puntos, con horas distintas e intensidades entre 0 y 100 %.");
+        const string error = "Usa de 2 a 96 puntos, con horas distintas e intensidades entre 0 y 100 %.";
+        if (points is null || points.Count is < 2 or > 96) throw new InvalidDataException(error);
+        Span<ulong> minutes = stackalloc ulong[23]; minutes.Clear();
+        foreach (var point in points)
+        {
+            if (point == null || point.Minute is < 0 or >= 1440 || !double.IsFinite(point.Strength) || point.Strength is < 0 or > 100) throw new InvalidDataException(error);
+            int slot = point.Minute / 64; ulong bit = 1UL << (point.Minute % 64);
+            if ((minutes[slot] & bit) != 0) throw new InvalidDataException(error);
+            minutes[slot] |= bit;
+        }
     }
     public static double Evaluate(List<CurvePoint> points, double minute)
     {
         Validate(points);
         if (!double.IsFinite(minute)) throw new ArgumentOutOfRangeException(nameof(minute));
         minute = (minute % 1440 + 1440) % 1440;
-        var sorted = points.OrderBy(p => p.Minute).ToArray();
-        int next = Array.FindIndex(sorted, p => p.Minute > minute);
-        if (next < 0) next = 0;
-        var before = sorted[(next + sorted.Length - 1) % sorted.Length]; var after = sorted[next];
+        CurvePoint? before = null, after = null; var first = points[0]; var last = points[0];
+        foreach (var point in points)
+        {
+            if (point.Minute < first.Minute) first = point;
+            if (point.Minute > last.Minute) last = point;
+            if (point.Minute <= minute && (before == null || point.Minute > before.Minute)) before = point;
+            if (point.Minute > minute && (after == null || point.Minute < after.Minute)) after = point;
+        }
+        before ??= last; after ??= first;
         double elapsed = (minute - before.Minute + 1440) % 1440;
         double duration = (after.Minute - before.Minute + 1440) % 1440;
         return before.Strength + (after.Strength - before.Strength) * elapsed / duration;

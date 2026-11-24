@@ -85,26 +85,32 @@ public static class Updates
         using var response = await Client.SendAsync(request, timeout.Token).ConfigureAwait(false); response.EnsureSuccessStatusCode();
         return ParseReleases(await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false), Installation.IsInstalled);
     }
-    public static async Task<DownloadedUpdate> DownloadAsync(AppRelease release, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    public static async Task<DownloadedUpdate> DownloadAsync(AppRelease release, IProgress<double>? progress = null, CancellationToken cancellationToken = default, HttpClient? transport = null, string? stagingRoot = null)
     {
+        // ResponseHeadersRead only bounds the headers with HttpClient.Timeout.
+        // Bound the entire transfer as well, including a stalled response body.
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        lifetime.CancelAfter(TimeSpan.FromMinutes(6)); cancellationToken = lifetime.Token;
+        transport ??= Client;
         if (!IsOfficialAsset(release.DownloadUrl)) throw new InvalidDataException("La descarga no pertenece al repositorio del programa.");
         string? expected = release.Sha256;
         if (expected == null)
         {
             if (release.ChecksumUrl == null || !IsOfficialAsset(release.ChecksumUrl)) throw new InvalidDataException("Falta la verificación de la descarga.");
-            string sums = await Client.GetStringAsync(release.ChecksumUrl, cancellationToken).ConfigureAwait(false);
+            string sums = await transport.GetStringAsync(release.ChecksumUrl, cancellationToken).ConfigureAwait(false);
             expected = sums.Split('\n').Select(line => line.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
                 .Where(parts => parts.Length == 2 && parts[1].TrimStart('*') == release.AssetName).Select(parts => parts[0]).SingleOrDefault();
             if (expected == null) throw new InvalidDataException("La versión publicada no incluye la verificación del ejecutable.");
         }
         expected = NormalizeHash(expected);
-        string folder = Path.Combine(UpdateFolder, Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
+        string folder = Path.Combine(stagingRoot ?? UpdateFolder, Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
         string path = Path.Combine(folder, release.IsInstaller ? "NightLightControl-Setup.exe" : "NightLightControl.exe");
         try
         {
-            using var response = await Client.GetAsync(release.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false); response.EnsureSuccessStatusCode();
+            using var response = await transport.GetAsync(release.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false); response.EnsureSuccessStatusCode();
             if (response.Content.Headers.ContentLength > MaximumDownload) throw new InvalidDataException("La descarga supera el tamaño permitido.");
             await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var transferClock = Stopwatch.StartNew(); var reports = new TransferProgress(progress, () => transferClock.Elapsed.TotalSeconds);
             await using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             {
                 byte[] buffer = new byte[81920]; long total = 0; int count;
@@ -112,11 +118,12 @@ public static class Updates
                 {
                     total += count; if (total > MaximumDownload) throw new InvalidDataException("La descarga supera el tamaño permitido.");
                     await output.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
-                    progress?.Report(Math.Clamp(100.0 * total / release.Size, 0, 100));
+                    reports.Report(total, release.Size);
                 }
                 if (total != release.Size) throw new InvalidDataException("La descarga está incompleta.");
             }
-            VerifyFile(path, expected); progress?.Report(100); return new(path, expected, release.IsInstaller);
+            VerifyFile(path, expected); cancellationToken.ThrowIfCancellationRequested();
+            reports.Report(release.Size, release.Size); return new(path, expected, release.IsInstaller);
         }
         catch { if (File.Exists(path)) File.Delete(path); if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder); throw; }
     }

@@ -33,12 +33,15 @@ public partial class MainWindow : Window
     private int lastGraphMinute = -1;
     private AppRelease? latestRelease;
     private bool checkingUpdate, installingUpdate;
+    private CancellationTokenSource? updateCancellation;
+    private bool exitAfterDownload, updateHandoff;
 
     public MainWindow(Settings settings, EventWaitHandle activation)
     {
         this.settings = settings; this.activation = activation; controller = new(settings);
         pendingSave = new(() => settings.Save(), () => DateTimeOffset.UtcNow);
-        controller.OwnershipChanged = active => crashGuard.SetActive(active && settings.RecoverAfterCrash);
+        controller.EnsureProtection = () => !settings.RecoverAfterCrash || crashGuard.SetActive(true);
+        controller.OwnershipChanged = active => { if (!active) crashGuard.SetActive(false); };
         InitializeComponent();
         AutoMode.IsChecked = settings.Automatic; ManualMode.IsChecked = !settings.Automatic;
         ManualSlider.Value = settings.ManualStrength; TransitionSlider.Value = settings.TransitionSeconds;
@@ -68,6 +71,7 @@ public partial class MainWindow : Window
     }
     private void Tick(object? sender, EventArgs e)
     {
+        if (exiting) return;
         if (shutdown.WaitOne(0)) { Exit(); return; }
         if (activation.WaitOne(0)) ShowWindow();
         controller.Tick();
@@ -85,7 +89,7 @@ public partial class MainWindow : Window
         if (lastGraphMinute != minute) { lastGraphMinute = minute; Editor.CurrentMinute = minute; ProfilePreview.CurrentMinute = minute; Editor.InvalidateVisual(); ProfilePreview.InvalidateVisual(); }
         tray.Text = ("Night Light Control · " + (applying ? $"{controller.CurrentStrength:0} %" : "en pausa"));
         if (pendingSave.IsDue) Save();
-        timer.Interval = TimeSpan.FromMilliseconds(controller.IsTransitioning || controller.IsRefreshingDisplays || dirty && pendingSave.LastError == null ? 250 : 1000);
+        timer.Interval = TimeSpan.FromMilliseconds(dirty && pendingSave.LastError == null ? 250 : controller.RecommendedTickMilliseconds);
     }
     private void MarkDirty()
     {
@@ -156,19 +160,27 @@ public partial class MainWindow : Window
     {
         if (latestRelease == null || latestRelease.Version <= Updates.CurrentVersion || installingUpdate) return;
         installingUpdate = true; CheckUpdatesButton.IsEnabled = false; InstallUpdateButton.IsEnabled = false;
+        updateCancellation = new CancellationTokenSource();
         UpdateProgress.Value = 0; UpdateProgress.Visibility = Visibility.Visible;
         try
         {
             UpdateStatusText.Text = "Descargando la actualización…";
-            var progress = new Progress<double>(value => { UpdateProgress.Value = value; UpdateStatusText.Text = $"Descargando la actualización… {value:0} %"; });
-            var download = await Updates.DownloadAsync(latestRelease, progress);
+            var cancellation = updateCancellation.Token;
+            var progress = new Progress<double>(value => { if (!exiting && installingUpdate && !cancellation.IsCancellationRequested) { UpdateProgress.Value = value; UpdateStatusText.Text = $"Descargando la actualización… {value:0} %"; } });
+            var download = await Updates.DownloadAsync(latestRelease, progress, cancellation);
             UpdateStatusText.Text = "Descarga comprobada. Preparando instalación…";
             if (!controller.TryRestore()) throw new InvalidOperationException("No se pudo restaurar el color de Windows. La instalación se canceló.");
             if (dirty && !Save()) throw new InvalidOperationException("Guarda tu configuración antes de actualizar.");
-            Updates.StartInstall(download); Exit();
+            Updates.StartInstall(download); updateHandoff = true; Exit();
         }
+        catch (OperationCanceledException) { UpdateStatusText.Text = updateCancellation.IsCancellationRequested ? "Descarga cancelada." : "La descarga agotó el tiempo de espera. Puedes reintentar."; }
         catch (Exception ex) { Controller.Log("Instalar actualización: " + ex); UpdateStatusText.Text = "No se pudo instalar: " + ex.Message; }
-        finally { installingUpdate = false; CheckUpdatesButton.IsEnabled = true; InstallUpdateButton.IsEnabled = true; UpdateProgress.Visibility = Visibility.Collapsed; }
+        finally
+        {
+            installingUpdate = false; updateCancellation.Dispose(); updateCancellation = null;
+            if (!exiting) { CheckUpdatesButton.IsEnabled = true; InstallUpdateButton.IsEnabled = true; UpdateProgress.Visibility = Visibility.Collapsed; }
+            if (exitAfterDownload && !exiting) { exitAfterDownload = false; Exit(); }
+        }
     }
     private void UpdatePreferencesChanged(object sender, RoutedEventArgs e) { if (ready) { settings.CheckUpdatesAtStartup = UpdateStartupCheck.IsChecked == true; MarkDirty(); } }
     private void OpenReleases(object sender, RoutedEventArgs e) { try { Process.Start(new ProcessStartInfo(Updates.RepositoryUrl + "/releases") { UseShellExecute = true }); } catch (Exception ex) { MessageBox.Show(this, ex.Message); } }
@@ -271,11 +283,12 @@ public partial class MainWindow : Window
     private void Exit()
     {
         if (exiting) return;
+        if (installingUpdate && !updateHandoff) { exitAfterDownload = true; updateCancellation?.Cancel(); UpdateStatusText.Text = "Cancelando descarga antes de salir…"; return; }
         if (dirty && !Save(true)) return;
         if (!controller.TryRestore()) { MessageBox.Show(this, "Windows no pudo restaurar el color. Abre Luz nocturna de Windows y actívala/desactívala para recuperarlo.\n\n" + controller.LastError, "Restaurar color"); }
         exiting = true; timer.Stop();
         SystemEvents.DisplaySettingsChanged -= DisplayChanged; SystemEvents.PowerModeChanged -= PowerChanged; SystemEvents.SessionSwitch -= SessionChanged; SystemEvents.SessionEnding -= SessionEnding;
-        controller.Dispose(); crashGuard.Dispose(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose(); trayIcon.Dispose();
+        controller.Dispose(); crashGuard.Dispose(); shutdown.Dispose(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose(); trayIcon.Dispose();
         Close(); Application.Current.Shutdown();
     }
     private static Icon MakeIcon()

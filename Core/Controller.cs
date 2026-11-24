@@ -16,6 +16,7 @@ public sealed class Controller : IDisposable
     private readonly Func<bool> detectFlux;
     private readonly Func<string?> foregroundBlock;
     public Action<bool>? OwnershipChanged { get; set; }
+    public Func<bool>? EnsureProtection { get; set; }
     public Action<string> ErrorLog { get; set; } = Log;
     private double lastSeconds, lastApplySeconds = -100, lastConflictCheck = -100, lastErrorSeconds = -100;
     private double displayChangeUntil = -100, nextDisplayRetry, displayRetryStarted = -1, lastDisplayLog = -100;
@@ -33,6 +34,8 @@ public sealed class Controller : IDisposable
     public bool IsFadingOut { get; private set; }
     public bool IsTransitioning => ownsColor && appliedStrength.HasValue && Math.Abs(TargetStrength - appliedStrength.Value) > 0.001;
     public bool IsRefreshingDisplays => needsRefresh;
+    public bool IsPreparingProtection { get; private set; }
+    public int RecommendedTickMilliseconds => needsRefresh ? secondsNow() - displayRetryStarted < 10 ? 250 : 1000 : IsTransitioning || IsPreparingProtection ? 250 : 1000;
     public bool Available { get; private set; }
     public bool SessionLocked { get; set; }
     public bool Suspended { get; set; }
@@ -55,6 +58,8 @@ public sealed class Controller : IDisposable
     public void Resume() { PauseUntil = null; }
     public void Tick()
     {
+        IsPreparingProtection = false;
+        bool nativeOperation = false;
         double seconds = secondsNow(), elapsed = Math.Clamp(seconds - lastSeconds, 0, 2); lastSeconds = seconds;
         if (LastError != null && seconds - lastErrorSeconds < 5) return;
         try
@@ -65,10 +70,10 @@ public sealed class Controller : IDisposable
                 if (seconds < nextDisplayRetry) return;
                 try { engine.Refresh(); }
                 catch (Exception ex) { RetryDisplayChange(ex, seconds); return; }
-                Displays = engine.Description; Backend = engine.Backend; Available = true; needsRefresh = false; displayRetryStarted = -1;
+                Displays = engine.Description; Backend = engine.Backend; Available = true; needsRefresh = false;
             }
-            if (!Settings.Enabled && !ownsColor) { Status = "Control desactivado"; LastError = null; return; }
-            var native = readNative(); var now = localNow();
+            if (!Settings.Enabled && !ownsColor) { OwnershipChanged?.Invoke(false); Status = "Control desactivado"; LastError = null; displayRetryStarted = -1; return; }
+            nativeOperation = true; var native = readNative(); nativeOperation = false; var now = localNow();
             if (seconds - lastConflictCheck >= 3) { fluxRunning = detectFlux(); lastConflictCheck = seconds; }
             if (PauseUntil <= now) PauseUntil = null;
             // Never overwrite Windows' own strength-slider preview, even during disable or exit.
@@ -83,6 +88,7 @@ public sealed class Controller : IDisposable
             if (starting) appliedStrength = Strength(native.Kelvin);
             // State changes start from the displayed color, including re-enable during fade-out.
             if (starting || wasFadingOut != IsFadingOut) elapsed = 0;
+            if (EnsureProtection?.Invoke() == false) { IsPreparingProtection = true; Status = "Preparando protección de color…"; return; }
             double step = elapsed * 100 / Settings.TransitionSeconds;
             double current = appliedStrength!.Value;
             current += Math.Clamp(TargetStrength - current, -step, step); appliedStrength = current;
@@ -91,15 +97,15 @@ public sealed class Controller : IDisposable
             ownsColor = true; // Restore even when a native call succeeds on only some displays.
             if (kelvin != lastKelvin || seconds - lastApplySeconds >= 10)
             {
-                engine.Apply(kelvin); lastKelvin = kelvin; lastApplySeconds = seconds;
+                nativeOperation = true; engine.Apply(kelvin); nativeOperation = false; lastKelvin = kelvin; lastApplySeconds = seconds;
             }
             if (IsFadingOut && kelvin == native.Kelvin) { Restore(); Status = "Control desactivado"; }
             else Status = IsFadingOut ? "Desactivando suavemente…" : (Settings.Automatic ? "Siguiendo tu curva" : "Intensidad manual") + (native.ScheduleEnabled ? " · horario de Windows activo" : "");
-            Available = true; LastError = null;
+            Available = true; LastError = null; displayRetryStarted = -1;
         }
         catch (Exception ex)
         {
-            if (seconds <= displayChangeUntil) { RetryDisplayChange(ex, seconds); return; }
+            if (nativeOperation && seconds <= displayChangeUntil) { RetryDisplayChange(ex, seconds); return; }
             ErrorLog(ex.ToString()); Available = false; needsRefresh = true; lastErrorSeconds = seconds;
             try { Restore(); } catch (Exception restore) { ErrorLog("Restauración pendiente: " + restore); }
             LastError = ex.Message; Status = "No se pudo aplicar: " + ex.Message;
@@ -110,6 +116,7 @@ public sealed class Controller : IDisposable
         // Display topology may disappear briefly while Windows switches outputs.
         // Preserve ownership and current warmth; do not restore neutral or turn off settings.
         if (displayRetryStarted < 0) displayRetryStarted = seconds;
+        displayChangeUntil = seconds + 5;
         needsRefresh = true; Available = false; LastError = null; lastApplySeconds = -100;
         nextDisplayRetry = seconds + (seconds - displayRetryStarted < 10 ? .25 : 1);
         Status = "Reconectando pantallas… se conserva el control";

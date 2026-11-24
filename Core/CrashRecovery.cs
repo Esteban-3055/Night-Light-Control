@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Security.Cryptography;
 using NightLightControl.Native;
 
 namespace NightLightControl.Core;
@@ -78,48 +80,76 @@ public static class CrashRecovery
 
 public sealed class CrashGuard : IDisposable
 {
-    private Process? helper;
-    private string? statePath;
-    private RecoveryState? lastState;
-    public void SetActive(bool active)
+    private sealed class Worker(Process process, string path, RecoveryState state)
     {
-        if (lastState?.Active == active && (!active || helper is { HasExited: false })) return;
-        if (helper == null && !active) return;
-        if (helper == null || helper.HasExited)
+        public Process Process { get; } = process;
+        public string Path { get; } = path;
+        public RecoveryState State { get; set; } = state;
+    }
+    private Task<Worker>? preparation;
+    private Worker? worker;
+    public bool SetActive(bool active)
+    {
+        if (worker != null && worker.Process.HasExited) { worker.Process.Dispose(); worker = null; }
+        if (worker == null && preparation is { IsCompleted: true })
         {
-            string executable = Environment.ProcessPath ?? throw new InvalidOperationException("No se pudo preparar la recuperación.");
-            string cache = Path.Combine(CrashRecovery.Folder, Updates.CurrentVersionText); Directory.CreateDirectory(cache);
-            string worker = Path.Combine(cache, "RecoveryHelper.exe");
-            if (!File.Exists(worker)) File.Copy(executable, worker, false);
-            using var current = Process.GetCurrentProcess();
-            lastState = new(active, current.Id, current.StartTime.ToUniversalTime().Ticks);
-            statePath = Path.Combine(CrashRecovery.Folder, Guid.NewGuid().ToString("N") + ".json");
-            CrashRecovery.WriteState(statePath, lastState);
-            var start = new ProcessStartInfo(worker) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = cache };
-            foreach (string argument in new[] { "--recover-after-exit", lastState.ParentId.ToString(), lastState.ParentStartTicks.ToString(), statePath }) start.ArgumentList.Add(argument);
-            try
-            {
-                helper?.Dispose(); helper = Process.Start(start) ?? throw new InvalidOperationException("No se pudo iniciar la protección de recuperación.");
-                var deadline = Stopwatch.StartNew();
-                while (!File.Exists(statePath + ".ready"))
-                {
-                    if (helper.HasExited || deadline.ElapsedMilliseconds > 5000) throw new InvalidOperationException("No se pudo iniciar la recuperación de color. Usa la versión portable publicada.");
-                    Thread.Sleep(20);
-                }
-            }
-            catch
-            {
-                CrashRecovery.WriteState(statePath, lastState with { Active = false });
-                if (helper != null) { if (!helper.HasExited) helper.Kill(); helper.Dispose(); }
-                helper = null; lastState = null; throw;
-            }
+            if (!active && preparation.IsFaulted) { _ = preparation.Exception; preparation = null; return true; }
+            var completed = preparation; preparation = null; worker = completed.GetAwaiter().GetResult();
         }
-        else
+        if (worker != null && worker.Process.HasExited) { worker.Process.Dispose(); worker = null; }
+        if (worker == null)
         {
-            var next = lastState! with { Active = active }; CrashRecovery.WriteState(statePath!, next); lastState = next;
+            if (!active) return true;
+            preparation ??= Task.Run(PrepareWorker); return false;
+        }
+        if (worker.State.Active != active) { var next = worker.State with { Active = active }; CrashRecovery.WriteState(worker.Path, next); worker.State = next; }
+        return true;
+    }
+    private static Worker PrepareWorker()
+    {
+        string executable = Environment.ProcessPath ?? throw new InvalidOperationException("No se pudo preparar la recuperación.");
+        string cache = System.IO.Path.Combine(CrashRecovery.Folder, Updates.CurrentVersionText); Directory.CreateDirectory(cache);
+        string helperPath = System.IO.Path.Combine(cache, "RecoveryHelper.exe");
+        // Copy atomically: interrupted preparation must not poison the next startup.
+        if (!SameExecutable(executable, helperPath))
+        {
+            string temporary = helperPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try { File.Copy(executable, temporary, false); File.Move(temporary, helperPath, true); }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+        using var current = Process.GetCurrentProcess();
+        var state = new RecoveryState(false, current.Id, current.StartTime.ToUniversalTime().Ticks);
+        string path = System.IO.Path.Combine(CrashRecovery.Folder, Guid.NewGuid().ToString("N") + ".json"); CrashRecovery.WriteState(path, state);
+        var start = new ProcessStartInfo(helperPath) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = cache };
+        foreach (string value in new[] { "--recover-after-exit", state.ParentId.ToString(), state.ParentStartTicks.ToString(), path }) start.ArgumentList.Add(value);
+        Process? process = null;
+        try
+        {
+            process = Process.Start(start) ?? throw new InvalidOperationException("No se pudo iniciar la recuperación de color.");
+            var deadline = Stopwatch.StartNew();
+            while (!File.Exists(path + ".ready"))
+            {
+                if (process.HasExited || deadline.ElapsedMilliseconds > 10000) throw new InvalidOperationException("No se pudo preparar la protección de color. Reintenta o reinstala la aplicación.");
+                Thread.Sleep(20);
+            }
+            return new Worker(process, path, state);
+        }
+        catch
+        {
+            if (process != null) { if (!process.HasExited) { process.Kill(); process.WaitForExit(); } process.Dispose(); }
+            if (File.Exists(path)) File.Delete(path); if (File.Exists(path + ".ready")) File.Delete(path + ".ready"); throw;
         }
     }
-    // A normal controller restoration disarms the state. If restoration failed,
-    // leave it armed so that the independent process can retry after we exit.
-    public void Dispose() => helper?.Dispose();
+    public static bool SameExecutable(string source, string candidate)
+    {
+        if (!File.Exists(candidate) || new FileInfo(source).Length != new FileInfo(candidate).Length) return false;
+        using var original = File.OpenRead(source); using var copy = File.OpenRead(candidate);
+        return CryptographicOperations.FixedTimeEquals(SHA256.HashData(original), SHA256.HashData(copy));
+    }
+    // Do not disarm when a native restoration failed: the worker must still retry on exit.
+    public void Dispose()
+    {
+        worker?.Process.Dispose();
+        if (preparation is { IsCompletedSuccessfully: true }) preparation.Result.Process.Dispose();
+    }
 }

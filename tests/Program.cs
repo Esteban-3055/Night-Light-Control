@@ -103,6 +103,7 @@ finally
     Directory.Delete(temporary);
 }
 RegressionTests.Run(Assert, Near);
+AdvancedAuditTests.Run(Assert, Near);
 Console.WriteLine($"PASS: {checks} checks; curves, fades, persistence, recovery workers, CloudStore and verified updates.");
 
 if (args.Contains("--native"))

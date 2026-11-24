@@ -22,15 +22,23 @@ try {
         $entry = Get-ItemProperty -LiteralPath $uninstallKey
         if ($entry.DisplayVersion -ne $version -or $entry.InstallLocation -ne $testDirectory) { throw 'Registro de instalación incorrecto.' }
         if (-not (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Night Light Control.lnk'))) { throw 'Falta acceso en Inicio.' }
+        if ($attempt -eq 0) { 'User document to preserve' | Set-Content -LiteralPath (Join-Path $testDirectory 'docs/my-personal-note.md') }
+        if ($attempt -eq 1) {
+            $installedHash = (Get-FileHash -LiteralPath (Join-Path $testDirectory 'NightLightControl.exe') -Algorithm SHA256).Hash
+            $backupHash = (Get-FileHash -LiteralPath (Join-Path $testDirectory 'NightLightControl.exe.previous') -Algorithm SHA256).Hash
+            if ($installedHash -ne $backupHash) { throw 'La reinstalación no conservó el ejecutable anterior.' }
+        }
     }
     Start-Process -FilePath (Join-Path $testDirectory 'NightLightControl.exe') -ArgumentList '--uninstall --silent' -Wait -WindowStyle Hidden
     $deadline = [Diagnostics.Stopwatch]::StartNew()
     while ((Test-Path -LiteralPath $uninstallKey) -and $deadline.Elapsed.TotalSeconds -lt 30) { Start-Sleep -Milliseconds 100 }
     if (Test-Path -LiteralPath $uninstallKey) { throw 'La desinstalación de prueba no terminó.' }
     if (Test-Path -LiteralPath (Join-Path $testDirectory 'NightLightControl.exe')) { throw 'El programa no se eliminó.' }
+    if (Test-Path -LiteralPath (Join-Path $testDirectory 'NightLightControl.exe.previous')) { throw 'El respaldo del programa no se eliminó.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $testDirectory 'docs/my-personal-note.md'))) { throw 'La desinstalación eliminó un documento del usuario.' }
     $after = if (Test-Path -LiteralPath $profileFile) { (Get-FileHash -LiteralPath $profileFile -Algorithm SHA256).Hash } else { $null }
     if ($before -ne $after) { throw 'La configuración cambió durante la prueba.' }
-    Write-Output 'PASS: install, reinstall, Start menu, registered version, uninstall and preserved profiles.'
+    Write-Output 'PASS: install, reinstall, Start menu, registered version, uninstall and preserved profiles/user documents.'
 }
 finally {
     if ($startup) { Set-ItemProperty -LiteralPath $runKey -Name NightLightControl -Value $startup }

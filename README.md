@@ -1,7 +1,7 @@
 # Night Light Control
 
 Aplicación para Windows 11 x64 que ajusta la Luz nocturna nativa siguiendo una
-curva diaria dibujada por el usuario. Versión preliminar: **0.4.0**.
+curva diaria dibujada por el usuario. Versión preliminar: **0.5.0**.
 
 [Descargas para Windows x64](https://github.com/Esteban-3055/Night-Light-Control/releases)
 · [Compilaciones y comprobaciones](https://github.com/Esteban-3055/Night-Light-Control/actions)
@@ -15,7 +15,7 @@ valores de ejemplo, sin controlar una pantalla física.
 
 ## Uso
 
-Para una instalación normal, descarga **NightLightControl-0.4.0-Setup.exe** desde
+Para una instalación normal, descarga **NightLightControl-0.5.0-Setup.exe** desde
 [las versiones publicadas](https://github.com/Esteban-3055/Night-Light-Control/releases).
 El instalador añade el programa a Inicio y a Aplicaciones instaladas, con un
 desinstalador, y permite crear un acceso en el escritorio. No necesita permisos
@@ -71,6 +71,8 @@ En una instalación registrada, el actualizador descarga el instalador de la
 versión nueva. Lo ejecuta después de cerrar y restaurar el programa, conserva
 las preferencias de inicio y escritorio, y actualiza el registro de Windows.
 La versión portable sigue actualizando solo su ejecutable.
+Salir durante una descarga la cancela y espera a limpiar el archivo parcial.
+Las transferencias tienen un límite de tiempo y se verifican antes de instalar.
 
 Para desinstalar, utiliza **Configuración → Aplicaciones → Aplicaciones
 instaladas → Night Light Control → Desinstalar**. Se conservan los perfiles y
@@ -124,6 +126,8 @@ termine el proceso principal. Si el control seguía siendo responsable del color
 intenta aplicar la temperatura que Windows solicite entonces. Respeta la vista
 previa del deslizador nativo y reintenta si el controlador falla temporalmente.
 Un cierre normal desarma la recuperación después de restaurar el color.
+La preparación y comprobación del auxiliar se realizan en segundo plano; mientras
+terminan, la interfaz permanece disponible y todavía no aplica color nuevo.
 
 El auxiliar se ejecuta sin ventana, servicios ni permisos de administrador.
 Utiliza una copia del ejecutable portable en la carpeta local de recuperación,
@@ -132,7 +136,9 @@ procesos, se mata todo el árbol o Windows/controlador no acepta el cambio. En
 ese caso, abre Luz nocturna de Windows y actívala/desactívala para que Windows
 vuelva a aplicar su estado.
 
-La revisión y los límites de validación se detallan en [REVISION.md](docs/REVISION.md).
+La revisión anterior se detalla en [REVISION.md](docs/REVISION.md). Los resultados
+de consumo, optimización y fallos corregidos en 0.5.0 se encuentran en
+[AUDITORIA-0.5.0.md](docs/AUDITORIA-0.5.0.md).
 
 ## Archivos y desarrollo
 
