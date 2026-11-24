@@ -1,7 +1,7 @@
 # Night Light Control
 
 Aplicación para Windows 11 x64 que ajusta la Luz nocturna nativa siguiendo una
-curva diaria dibujada por el usuario. Versión preliminar: **0.2.0**.
+curva diaria dibujada por el usuario. Versión preliminar: **0.2.1**.
 
 [Descargas para Windows x64](https://github.com/Esteban-3055/Night-Light-Control./releases)
 · [Compilaciones y comprobaciones](https://github.com/Esteban-3055/Night-Light-Control./actions)

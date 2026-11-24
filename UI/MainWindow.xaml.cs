@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         ExclusionsBox.Text = string.Join(", ", settings.ExcludedApps);
         UpdateStartupCheck.IsChecked = settings.CheckUpdatesAtStartup;
         InstalledVersionText.Text = "Versión instalada · " + Updates.CurrentVersionText;
+        FooterVersionText.Text = "●  Night Light Control v" + Updates.CurrentVersionText;
         BindProfiles(); Editor.Changed += MarkDirty; Editor.SelectionChanged += UpdatePointFields; Editor.ResetSelection();
         trayIcon = MakeIcon();
         Icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(trayIcon.Handle, Int32Rect.Empty, System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());

@@ -115,7 +115,7 @@
      <StackPanel x:Name="UpdatesView" Visibility="Collapsed">
       <local:AngularPanel Margin="0,0,0,17"><StackPanel>
        <TextBlock Text="Versiones del programa" Style="{StaticResource SectionTitle}"/>
-       <TextBlock x:Name="InstalledVersionText" Text="Versión instalada · 0.2.0" FontSize="16" Margin="10,12,0,10"/>
+       <TextBlock x:Name="InstalledVersionText" Text="Versión instalada" FontSize="16" Margin="10,12,0,10"/>
        <TextBlock x:Name="UpdateStatusText" Text="Busca las versiones publicadas en GitHub." Style="{StaticResource Muted}" Margin="10,0,0,6" LineHeight="20"/>
        <TextBlock x:Name="LatestVersionText" Text="" Style="{StaticResource Muted}" Margin="10,0,0,18"/>
        <WrapPanel Margin="0,0,0,14"><Button x:Name="CheckUpdatesButton" Content="Buscar actualizaciones" Click="CheckUpdatesClicked"/><Button x:Name="InstallUpdateButton" Content="Descargar e instalar" Click="InstallUpdateClicked" IsEnabled="False" Style="{StaticResource PrimaryButton}"/></WrapPanel>
@@ -132,7 +132,7 @@
    </ScrollViewer>
   </Grid>
   <Border Grid.Row="2" BorderBrush="#626268" BorderThickness="0,1,0,0"><Grid Margin="18,0,15,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-   <TextBlock Text="●  Night Light Control v0.2.0" VerticalAlignment="Center" FontSize="11"/>
+   <TextBlock x:Name="FooterVersionText" Text="●  Night Light Control" VerticalAlignment="Center" FontSize="11"/>
    <TextBlock Grid.Column="1" x:Name="FooterProfileText" Text="Mi curva" VerticalAlignment="Center" Foreground="#C0C0C8" FontSize="11" Margin="18,0,0,0"/>
    <TextBlock Grid.Column="2" x:Name="SaveText" Text="Cambios guardados" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#C0C0C8" FontSize="11" Margin="8,0,20,0"/>
    <Button Grid.Column="3" Content="Salir y restaurar" Click="ExitClicked" Padding="11,5" FontSize="11" Margin="0"/>
