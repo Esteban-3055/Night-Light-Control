@@ -16,6 +16,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Contains("--recover-after-exit")) return CrashRecovery.Run(args);
         if (args.Contains("--apply-update")) return Updates.ApplyUpdate(args);
         if (args.Contains("--enable-startup")) Settings.StartWithWindows = true;
         if (args.Contains("--check-updates"))
@@ -30,7 +31,7 @@ public static class Program
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\NightLightControl-Show-" + Environment.UserName);
         if (!created) { activate.Set(); return 0; }
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        app.DispatcherUnhandledException += (_, e) => { Controller.Log(e.Exception.ToString()); MessageBox.Show(e.Exception.Message, "Night Light Control", MessageBoxButton.OK, MessageBoxImage.Error); e.Handled = true; };
+        app.DispatcherUnhandledException += (_, e) => { Controller.Log(e.Exception.ToString()); if (app.MainWindow is MainWindow window) window.StopAfterUnexpectedError(); MessageBox.Show(e.Exception.Message, "Night Light Control", MessageBoxButton.OK, MessageBoxImage.Error); e.Handled = true; };
         try
         {
             var settings = Settings.Load(out string? warning);

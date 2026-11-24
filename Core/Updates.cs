@@ -39,6 +39,8 @@ public static class Updates
         using var document = JsonDocument.Parse(json); AppRelease? newest = null;
         foreach (var item in document.RootElement.EnumerateArray())
         {
+            try
+            {
             if (item.TryGetProperty("draft", out var draft) && draft.GetBoolean()) continue;
             string tag = item.GetProperty("tag_name").GetString() ?? "";
             if (!Version.TryParse(tag.TrimStart('v', 'V'), out var version)) continue;
@@ -61,6 +63,11 @@ public static class Updates
             string page = RepositoryUrl + "/releases/tag/" + Uri.EscapeDataString(tag);
             var release = new AppRelease(version, tag, page, url, checksumUrl, hash, size);
             if (newest == null || release.Version > newest.Version) newest = release;
+            }
+            catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or System.Collections.Generic.KeyNotFoundException or FormatException or OverflowException)
+            {
+                // A malformed/incomplete release must not hide another valid update.
+            }
         }
         return newest;
     }
@@ -105,7 +112,7 @@ public static class Updates
             }
             VerifyFile(path, expected); progress?.Report(100); return new(path, expected);
         }
-        catch { if (File.Exists(path)) File.Delete(path); throw; }
+        catch { if (File.Exists(path)) File.Delete(path); if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder); throw; }
     }
     public static void VerifyFile(string path, string expectedHash)
     {

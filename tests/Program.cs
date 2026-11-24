@@ -2,6 +2,15 @@ using System.Text.Json;
 using NightLightControl.Core;
 using NightLightControl.Native;
 
+if (args.Contains("--wait-test-parent")) { Thread.Sleep(Timeout.Infinite); return; }
+if (args.Length == 5 && args[0] == "--recovery-test-worker")
+{
+    int parentId = int.Parse(args[2]); long parentTicks = long.Parse(args[3]);
+    CrashRecovery.WaitForParent(parentId, parentTicks);
+    CrashRecovery.RecoverIfArmed(args[1], parentId, parentTicks, () => File.WriteAllText(args[4], "restored"));
+    return;
+}
+
 int checks = 0;
 void Assert(bool condition, string name) { checks++; if (!condition) throw new Exception(name); }
 void Near(double actual, double expected, string name) => Assert(Math.Abs(actual - expected) < 0.00001, name);
@@ -65,6 +74,8 @@ Assert(!Updates.IsOfficialAsset(official.Replace("https:", "http:")), "Updater r
 var release = Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("v0.8.0", official), Release("v0.9.0", official), Release("v1.0.0", official, true) }));
 Assert(release?.Tag == "v0.9.0" && release.Sha256 == sampleHash, "Updater selects newest non-draft version");
 Assert(Updates.ParseReleases("[]") == null, "Updater handles no release");
+Assert(Updates.ParseReleases(JsonSerializer.Serialize(new object[] { new { bad = "entry" }, Release("v0.9.0", official) }))?.Tag == "v0.9.0", "Malformed release does not hide a valid update");
+Assert(Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("v9.0.0", official, hash: "bad"), Release("v0.9.0", official) }))?.Tag == "v0.9.0", "Invalid digest does not block other valid releases");
 Assert(Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("invalid", official) })) == null, "Updater skips unknown version format");
 Assert(Updates.ParseReleases(JsonSerializer.Serialize(new[] { Release("v0.9.0", "https://example.org/file.exe") })) == null, "Updater refuses external release asset");
 Reject(() => Updates.NormalizeHash("bad hash"), "Updater rejects malformed hash");
@@ -85,7 +96,8 @@ finally
     foreach (string file in Directory.EnumerateFiles(temporary)) File.Delete(file);
     Directory.Delete(temporary);
 }
-Console.WriteLine($"PASS: {checks} checks; daily curve, midnight, persistence, CloudStore and verified update installation.");
+RegressionTests.Run(Assert, Near);
+Console.WriteLine($"PASS: {checks} checks; curves, fades, persistence, recovery workers, CloudStore and verified updates.");
 
 if (args.Contains("--native"))
 {

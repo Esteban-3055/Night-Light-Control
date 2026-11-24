@@ -21,12 +21,14 @@ public partial class MainWindow : Window
 {
     private readonly Settings settings;
     private readonly Controller controller;
+    private readonly CrashGuard crashGuard = new();
+    private readonly PendingSave pendingSave;
     private readonly EventWaitHandle activation;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly Forms.NotifyIcon tray;
     private readonly Icon trayIcon;
-    private bool ready, exiting, dirty;
-    private DateTime saveAfter;
+    private bool ready, exiting;
+    private bool dirty => pendingSave.IsDirty;
     private int lastGraphMinute = -1;
     private AppRelease? latestRelease;
     private bool checkingUpdate, installingUpdate;
@@ -34,12 +36,15 @@ public partial class MainWindow : Window
     public MainWindow(Settings settings, EventWaitHandle activation)
     {
         this.settings = settings; this.activation = activation; controller = new(settings);
+        pendingSave = new(() => settings.Save(), () => DateTimeOffset.UtcNow);
+        controller.OwnershipChanged = active => crashGuard.SetActive(active && settings.RecoverAfterCrash);
         InitializeComponent();
         AutoMode.IsChecked = settings.Automatic; ManualMode.IsChecked = !settings.Automatic;
         ManualSlider.Value = settings.ManualStrength; TransitionSlider.Value = settings.TransitionSeconds;
         StartupCheck.IsChecked = Settings.StartWithWindows; FullscreenCheck.IsChecked = settings.PauseFullscreen;
         ExclusionsBox.Text = string.Join(", ", settings.ExcludedApps);
         UpdateStartupCheck.IsChecked = settings.CheckUpdatesAtStartup;
+        RecoveryCheck.IsChecked = settings.RecoverAfterCrash;
         InstalledVersionText.Text = "Versión instalada · " + Updates.CurrentVersionText;
         FooterVersionText.Text = "●  Night Light Control v" + Updates.CurrentVersionText;
         BindProfiles(); Editor.Changed += MarkDirty; Editor.SelectionChanged += UpdatePointFields; Editor.ResetSelection();
@@ -66,7 +71,7 @@ public partial class MainWindow : Window
         controller.Tick();
         StatusText.Text = controller.Status;
         BackendText.Text = controller.Backend; DisplayText.Text = controller.Displays;
-        bool applying = settings.Enabled && controller.LastError == null && controller.Status.StartsWith(settings.Automatic ? "Siguiendo" : "Intensidad", StringComparison.Ordinal);
+        bool applying = controller.IsApplying;
         IntensityText.Text = applying ? controller.CurrentStrength.ToString("0", CultureInfo.CurrentCulture) : "—";
         KelvinText.Text = applying ? $"{Curve.Kelvin(controller.CurrentStrength):N0} K · objetivo {controller.TargetStrength:0} %" : "Sin aplicar calidez propia";
         EnableButton.Content = settings.Enabled ? "Desactivar control" : "Activar control";
@@ -77,20 +82,23 @@ public partial class MainWindow : Window
         int minute = (int)DateTime.Now.TimeOfDay.TotalMinutes;
         if (lastGraphMinute != minute) { lastGraphMinute = minute; Editor.CurrentMinute = minute; ProfilePreview.CurrentMinute = minute; Editor.InvalidateVisual(); ProfilePreview.InvalidateVisual(); }
         tray.Text = ("Night Light Control · " + (applying ? $"{controller.CurrentStrength:0} %" : "en pausa"));
-        if (dirty && DateTime.UtcNow >= saveAfter) Save();
-        timer.Interval = TimeSpan.FromMilliseconds(controller.IsTransitioning || dirty ? 250 : 1000);
+        if (pendingSave.IsDue) Save();
+        timer.Interval = TimeSpan.FromMilliseconds(controller.IsTransitioning || dirty && pendingSave.LastError == null ? 250 : 1000);
     }
     private void MarkDirty()
     {
         if (!ready) return;
-        dirty = true; saveAfter = DateTime.UtcNow.AddMilliseconds(750); SaveText.Text = "Guardando…";
+        pendingSave.MarkChanged(); SaveText.Text = "Guardando…";
         timer.Interval = TimeSpan.FromMilliseconds(250);
     }
-    private void Save()
+    private bool Save(bool notify = false)
     {
-        try { settings.Save(); dirty = false; SaveText.Text = "Cambios guardados"; }
-        catch (Exception ex) { SaveText.Text = "No se pudo guardar"; dirty = false; Controller.Log(ex.ToString()); MessageBox.Show(this, ex.Message, "Guardar configuración"); }
+        bool saved = pendingSave.TrySave(); SaveText.Text = saved ? "Cambios guardados" : "Error al guardar · cambios pendientes";
+        if (!saved) { Controller.Log(pendingSave.LastError!.ToString()); if (notify) MessageBox.Show(this, pendingSave.LastError.Message, "Guardar configuración"); }
+        return saved;
     }
+    private void SaveCurveClicked(object sender, RoutedEventArgs e) { if (ApplyPointFields() && Save(true)) SaveText.Text = "Curva guardada"; }
+    public void StopAfterUnexpectedError() { settings.Enabled = false; controller.TryRestore(); MarkDirty(); Save(); }
     private void ShowWindow() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); }
     private void BindProfiles()
     {
@@ -154,7 +162,7 @@ public partial class MainWindow : Window
             var download = await Updates.DownloadAsync(latestRelease, progress);
             UpdateStatusText.Text = "Descarga comprobada. Preparando instalación…";
             if (!controller.TryRestore()) throw new InvalidOperationException("No se pudo restaurar el color de Windows. La instalación se canceló.");
-            if (dirty) { Save(); if (SaveText.Text == "No se pudo guardar") throw new InvalidOperationException("Guarda tu configuración antes de actualizar."); }
+            if (dirty && !Save()) throw new InvalidOperationException("Guarda tu configuración antes de actualizar.");
             Updates.StartInstall(download); Exit();
         }
         catch (Exception ex) { Controller.Log("Instalar actualización: " + ex); UpdateStatusText.Text = "No se pudo instalar: " + ex.Message; }
@@ -194,19 +202,23 @@ public partial class MainWindow : Window
     private void UpdatePointFields()
     {
         if (Editor.Selected == null) return;
-        PointTime.Text = Curve.Time(Editor.Selected.Minute); PointStrength.Text = Editor.Selected.Strength.ToString("0", CultureInfo.CurrentCulture);
+        PointTime.Text = Curve.Time(Editor.Selected.Minute); PointStrength.Text = Editor.Selected.Strength.ToString(CultureInfo.CurrentCulture);
     }
-    private void ApplyPointFields()
+    private bool ApplyPointFields()
     {
-        if (!ready || Editor.Selected == null) return;
+        if (!ready || Editor.Selected == null) return true;
         try
         {
             int minute = Curve.ParseTime(PointTime.Text.Trim());
             if (settings.Current.Points.Any(p => p != Editor.Selected && p.Minute == minute)) throw new FormatException("Ya existe un punto a esa hora.");
             if (!double.TryParse(PointStrength.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double value) || !double.IsFinite(value) || value is < 0 or > 100) throw new FormatException("La intensidad debe estar entre 0 y 100 %.");
-            Editor.Selected.Minute = minute; Editor.Selected.Strength = value; Editor.InvalidateVisual(); MarkDirty();
+            if (Editor.Selected.Minute != minute || Editor.Selected.Strength != value)
+            {
+                Editor.Selected.Minute = minute; Editor.Selected.Strength = value; Editor.InvalidateVisual(); MarkDirty();
+            }
+            return true;
         }
-        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Editar punto"); UpdatePointFields(); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Editar punto"); UpdatePointFields(); return false; }
     }
     private void PointKeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter) { ApplyPointFields(); e.Handled = true; Keyboard.ClearFocus(); } }
     private void PointLostFocus(object sender, KeyboardFocusChangedEventArgs e) { ApplyPointFields(); }
@@ -233,6 +245,8 @@ public partial class MainWindow : Window
     {
         if (!ready) return;
         settings.PauseFullscreen = FullscreenCheck.IsChecked == true; settings.TransitionSeconds = (int)TransitionSlider.Value; MarkDirty();
+        settings.RecoverAfterCrash = RecoveryCheck.IsChecked == true;
+        crashGuard.SetActive(controller.IsApplying && settings.RecoverAfterCrash);
     }
     private void ExclusionsChanged(object sender, KeyboardFocusChangedEventArgs e)
     {
@@ -250,15 +264,16 @@ public partial class MainWindow : Window
     private void PowerChanged(object sender, PowerModeChangedEventArgs e) => Dispatcher.BeginInvoke(() => { if (e.Mode == PowerModes.Suspend) { controller.Suspended = true; controller.TryRestore(); } else if (e.Mode == PowerModes.Resume) { controller.Suspended = false; controller.Refresh(); } });
     private void SessionChanged(object sender, SessionSwitchEventArgs e) => Dispatcher.BeginInvoke(() => { if (e.Reason == SessionSwitchReason.SessionLock) { controller.SessionLocked = true; controller.TryRestore(); } else if (e.Reason == SessionSwitchReason.SessionUnlock) { controller.SessionLocked = false; controller.Refresh(); } });
     private void SessionEnding(object sender, SessionEndingEventArgs e) => Dispatcher.Invoke(() => controller.TryRestore());
-    private void OnClosing(object? sender, CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); if (dirty) Save(); } }
+    private void OnClosing(object? sender, CancelEventArgs e) { if (!exiting) { e.Cancel = true; if (!dirty || Save(true)) Hide(); } }
     private void ExitClicked(object sender, RoutedEventArgs e) => Exit();
     private void Exit()
     {
         if (exiting) return;
+        if (dirty && !Save(true)) return;
         if (!controller.TryRestore()) { MessageBox.Show(this, "Windows no pudo restaurar el color. Abre Luz nocturna de Windows y actívala/desactívala para recuperarlo.\n\n" + controller.LastError, "Restaurar color"); }
-        exiting = true; timer.Stop(); if (dirty) Save();
+        exiting = true; timer.Stop();
         SystemEvents.DisplaySettingsChanged -= DisplayChanged; SystemEvents.PowerModeChanged -= PowerChanged; SystemEvents.SessionSwitch -= SessionChanged; SystemEvents.SessionEnding -= SessionEnding;
-        controller.Dispose(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose(); trayIcon.Dispose();
+        controller.Dispose(); crashGuard.Dispose(); tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Dispose(); trayIcon.Dispose();
         Close(); Application.Current.Shutdown();
     }
     private static Icon MakeIcon()

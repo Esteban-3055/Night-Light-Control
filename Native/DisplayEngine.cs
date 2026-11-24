@@ -9,7 +9,7 @@ using System.Threading;
 
 namespace NightLightControl.Native;
 
-public sealed unsafe class DisplayEngine : IDisposable
+public sealed unsafe class DisplayEngine : IDisplayEngine
 {
     private sealed record Target(nint Display, string Source, string Name, bool Capable);
     private readonly List<Target> targets = new();
@@ -22,7 +22,7 @@ public sealed unsafe class DisplayEngine : IDisposable
     private static nint* V(nint p) => *(nint**)p;
     private static void Check(int hr) { if (hr < 0) Marshal.ThrowExceptionForHR(hr); }
     private static void Release(nint p) { if (p != 0) ((delegate* unmanaged[Stdcall]<nint, uint>)V(p)[2])(p); }
-    private static nint Query(nint p, Guid iid) { nint result = 0; Check(((delegate* unmanaged[Stdcall]<nint, Guid*, nint*, int>)V(p)[0])(p, &iid, &result)); return result; }
+    private static nint Query(nint p, Guid iid, bool optional = false) { nint result = 0; int hr = ((delegate* unmanaged[Stdcall]<nint, Guid*, nint*, int>)V(p)[0])(p, &iid, &result); if (optional && hr == unchecked((int)0x80004002)) return 0; Check(hr); return result; }
     private static nint HString(string value) { Check(WindowsCreateString(value, (uint)value.Length, out var p)); return p; }
     private static byte Property(nint p, int slot) { byte b = 0; Check(((delegate* unmanaged[Stdcall]<nint, byte*, int>)V(p)[slot])(p, &b)); return b; }
 
@@ -42,6 +42,7 @@ public sealed unsafe class DisplayEngine : IDisposable
                 CheckWin(DisplayConfigGetDeviceInfo(ref target));
                 if (string.IsNullOrEmpty(target.Path)) continue;
                 nint display = Open(factory, target.Path);
+                if (display == 0) continue; // An unsupported virtual display must not block compatible displays.
                 try
                 {
                     bool capable = Property(display, 6) != 0;
@@ -77,7 +78,7 @@ public sealed unsafe class DisplayEngine : IDisposable
             } while (true);
             if (status != 1) throw new InvalidOperationException("Windows no pudo abrir la pantalla.");
             Check(((delegate* unmanaged[Stdcall]<nint, nint*, int>)V(operation)[8])(operation, &inspectable));
-            return Query(inspectable, new("cda29a3e-9e7e-4b86-8f5f-368aa0710008"));
+            return Query(inspectable, new("cda29a3e-9e7e-4b86-8f5f-368aa0710008"), optional: true);
         }
         finally { Release(inspectable); Release(info); Release(operation); WindowsDeleteString(id); }
     }

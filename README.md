@@ -1,7 +1,7 @@
 # Night Light Control
 
 Aplicación para Windows 11 x64 que ajusta la Luz nocturna nativa siguiendo una
-curva diaria dibujada por el usuario. Versión preliminar: **0.2.1**.
+curva diaria dibujada por el usuario. Versión preliminar: **0.3.0**.
 
 [Descargas para Windows x64](https://github.com/Esteban-3055/Night-Light-Control/releases)
 · [Compilaciones y comprobaciones](https://github.com/Esteban-3055/Night-Light-Control/actions)
@@ -23,7 +23,14 @@ valores de ejemplo, sin controlar una pantalla física.
 4. Haz doble clic en el gráfico para añadir un punto. Selecciona uno para editar
    su hora e intensidad exactas debajo del gráfico. Supr o el botón − eliminan
    el punto seleccionado; siempre se conservan al menos dos puntos.
-5. Pulsa **Activar control** con **Seguir mi curva** seleccionado.
+5. Pulsa **Guardar curva** para guardar inmediatamente los puntos y los valores
+   exactos que acabas de editar. También se conserva el guardado automático.
+6. Pulsa **Activar control** con **Seguir mi curva** seleccionado.
+
+Al desactivar, el programa vuelve gradualmente al color solicitado por Windows
+con la misma velocidad que al activarse. Si lo reactivas a mitad de esa salida,
+la transición continúa desde el color actual. El indicador permanece visible
+mientras termina la salida gradual.
 
 En **Perfiles**, los cambios se guardan automáticamente. Puedes duplicar,
 renombrar y eliminar perfiles. **Control manual** permite fijar temporalmente
@@ -74,11 +81,31 @@ Si utilizas el horario propio de Windows, desactívalo manualmente para que no
 compita con tu curva. La aplicación no modifica ese ajuste.
 
 Las interfaces son privadas y una actualización de Windows puede afectar su
-compatibilidad. Si se termina el proceso a la fuerza, la calidez puede continuar
-hasta que Windows vuelva a aplicar su estado. En ese caso abre Luz nocturna de
-Windows y actívala/desactívala. HDR, videojuegos y suspensión/reanudación física
-necesitan pruebas específicas; el éxito de una llamada no confirma la apariencia
-del panel.
+compatibilidad. HDR, videojuegos y suspensión/reanudación física necesitan
+pruebas específicas; el éxito de una llamada no confirma la apariencia del panel.
+
+## Cierres inesperados y estado de Windows
+
+La aplicación no cambia los registros guardados de Luz nocturna. Sin una
+restauración, la transformación de color aplicada durante la ejecución puede
+continuar después de matar el proceso, hasta que Windows vuelva a aplicar su
+estado. No equivale a cambiar permanentemente la configuración de Windows.
+
+La opción **Restaurar color tras un cierre inesperado**, activada por defecto,
+prepara un auxiliar independiente antes de aplicar color. Este espera a que
+termine el proceso principal. Si el control seguía siendo responsable del color,
+intenta aplicar la temperatura que Windows solicite entonces. Respeta la vista
+previa del deslizador nativo y reintenta si el controlador falla temporalmente.
+Un cierre normal desarma la recuperación después de restaurar el color.
+
+El auxiliar se ejecuta sin ventana, servicios ni permisos de administrador.
+Utiliza una copia del ejecutable portable en la carpeta local de recuperación,
+conservada por versión. La protección no está garantizada si se terminan ambos
+procesos, se mata todo el árbol o Windows/controlador no acepta el cambio. En
+ese caso, abre Luz nocturna de Windows y actívala/desactívala para que Windows
+vuelva a aplicar su estado.
+
+La revisión y los límites de validación se detallan en [REVISION.md](docs/REVISION.md).
 
 ## Archivos y desarrollo
 

@@ -1,20 +1,22 @@
-Nueva interfaz negra y blanca para Night Light Control, inspirada en la referencia
-visual de Victus Fan Control y adaptada a la regulación de Luz nocturna.
+Night Light Control 0.3.0 incorpora guardado explícito, desactivación gradual y
+protección frente a cierres inesperados.
 
-- Paneles con esquinas angulares y curva de intensidad luminosa.
-- Navegación lateral para Curva diaria, Perfiles y Preferencias.
-- Horarios e intensidades editables arrastrando los puntos del gráfico.
-- Perfiles, transiciones suaves, control manual y pausa temporal.
-- Uso del motor nativo de Windows sin escribir los registros de Luz nocturna.
-- Portable para Windows 11 x64 con .NET incluido.
-- Inicio con Windows en la bandeja y sección de actualizaciones desde GitHub.
-- Comprobación de descargas, instalación a petición y copia de la versión anterior.
+- Botón **Guardar curva**, compatible con el guardado automático.
+- Fade-out al desactivar, con el mismo ritmo del fade-in y sin saltos al reactivar.
+- Indicador de calidez visible hasta terminar la salida.
+- Protección opcional con un auxiliar independiente que intenta restaurar el
+  color solicitado por Windows cuando se cierra inesperadamente el proceso.
+- Corrección de cambios perdidos tras un fallo de escritura y recuperación de
+  configuraciones bloqueadas/dañadas con conservación del archivo original.
+- Respeto de la vista previa nativa de Windows al desactivar o salir.
+- Correcciones en decimales de intensidad, pantalla virtual incompatible y
+  entradas incompletas en la lista de versiones de GitHub.
 
-Descarga el ZIP, extráelo y abre **NightLightControl.exe**. Los perfiles existentes
-se conservan en la carpeta local de configuración.
+Se conservan los perfiles existentes. Para actualizar desde la aplicación, entra
+en **Actualizaciones**, busca la versión y pulsa **Descargar e instalar**.
 
-Esta es una versión preliminar. El motor se probó localmente en Windows 11 25H2,
-con dos pantallas, y se verificó la restauración de la temperatura solicitada por
-Windows en la versión anterior. El rediseño se comprueba sin tomar control del
-escritorio. Las comprobaciones de GitHub validan el código y el paquete; no prueban
-pantallas físicas, HDR ni videojuegos.
+Las pruebas cubren el motor con pantallas y reloj simulados, fallos de guardado,
+procesos de recuperación y renderizado de la interfaz sin control remoto. No se
+ha provocado un cierre con cambios de color en las pantallas del usuario. La
+recuperación no puede garantizarse si también se termina el auxiliar o Windows
+no admite la restauración. Consulta el informe de revisión incluido.

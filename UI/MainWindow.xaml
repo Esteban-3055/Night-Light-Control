@@ -67,7 +67,8 @@
        <WrapPanel Margin="0,12,0,0" VerticalAlignment="Center">
         <TextBlock Text="Hora" VerticalAlignment="Center" Margin="0,0,8,8" Foreground="#B4B4BD"/><TextBox x:Name="PointTime" Width="71" Margin="0,0,12,8" ToolTip="Hora del punto (HH:mm)" KeyDown="PointKeyDown" LostKeyboardFocus="PointLostFocus"/>
         <TextBlock Text="%" VerticalAlignment="Center" Margin="0,0,8,8" Foreground="#B4B4BD"/><TextBox x:Name="PointStrength" Width="52" Margin="0,0,12,8" ToolTip="Intensidad del punto (0–100 %)" KeyDown="PointKeyDown" LostKeyboardFocus="PointLostFocus"/>
-        <Button Content="+ Punto" Click="AddPoint" Padding="11,8" Margin="0,0,8,8"/><Button Content="−" ToolTip="Eliminar punto seleccionado" Click="DeletePoint" Padding="12,8" Margin="0,0,0,8"/>
+        <Button Content="+ Punto" Click="AddPoint" Padding="11,8" Margin="0,0,8,8"/><Button Content="−" ToolTip="Eliminar punto seleccionado" Click="DeletePoint" Padding="12,8" Margin="0,0,8,8"/>
+        <Button x:Name="SaveCurveButton" Content="Guardar curva" Click="SaveCurveClicked" Style="{StaticResource PrimaryButton}" Padding="12,8" Margin="0,0,0,8"/>
        </WrapPanel>
        <TextBlock Text="Arrastra los puntos · Doble clic para añadir · Supr para eliminar" Style="{StaticResource Muted}" FontSize="11" Margin="0,3,0,0"/>
       </StackPanel></local:AngularPanel>
@@ -100,8 +101,8 @@
       <local:AngularPanel Margin="0,0,0,17"><StackPanel>
        <TextBlock Text="Comportamiento" Style="{StaticResource SectionTitle}"/>
        <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="32"/><ColumnDefinition/></Grid.ColumnDefinitions>
-        <StackPanel><CheckBox x:Name="StartupCheck" Content="Iniciar con Windows, en la bandeja" Click="StartupChanged"/><CheckBox x:Name="FullscreenCheck" Content="Pausar en pantalla completa" Click="PreferencesChanged"/></StackPanel>
-        <StackPanel Grid.Column="2" Margin="0,8,0,0"><TextBlock x:Name="TransitionLabel" Text="Transición de 0 a 100 %: 10 s"/><Slider x:Name="TransitionSlider" Minimum="1" Maximum="60" ValueChanged="PreferencesChanged" Margin="0,12,0,0"/><TextBlock Text="También suaviza los cambios de modo o perfil." Style="{StaticResource Muted}" FontSize="11" Margin="0,5,0,0"/></StackPanel>
+        <StackPanel><CheckBox x:Name="StartupCheck" Content="Iniciar con Windows, en la bandeja" Click="StartupChanged"/><CheckBox x:Name="FullscreenCheck" Content="Pausar en pantalla completa" Click="PreferencesChanged"/><CheckBox x:Name="RecoveryCheck" Content="Restaurar color tras un cierre inesperado" Click="PreferencesChanged"/></StackPanel>
+        <StackPanel Grid.Column="2" Margin="0,8,0,0"><TextBlock x:Name="TransitionLabel" Text="Transición de 0 a 100 %: 10 s"/><Slider x:Name="TransitionSlider" Minimum="1" Maximum="120" ValueChanged="PreferencesChanged" Margin="0,12,0,0"/><TextBlock Text="Suaviza la activación, desactivación y los cambios de modo o perfil." Style="{StaticResource Muted}" FontSize="11" Margin="0,5,0,0"/></StackPanel>
        </Grid>
       </StackPanel></local:AngularPanel>
       <local:AngularPanel Margin="0,0,0,17"><StackPanel>
@@ -110,7 +111,7 @@
        <TextBox x:Name="ExclusionsBox" LostKeyboardFocus="ExclusionsChanged" ToolTip="Nombres separados por comas, por ejemplo Photoshop.exe, juego.exe"/>
        <TextBlock Text="Escribe nombres .exe separados por comas. Ejemplo: Photoshop.exe, juego.exe" Style="{StaticResource Muted}" FontSize="11" Margin="0,9,0,0"/>
       </StackPanel></local:AngularPanel>
-      <local:AngularPanel><StackPanel><TextBlock Text="Color y restauración" Style="{StaticResource SectionTitle}"/><TextBlock Text="Al pausar, desactivar el control o salir normalmente, se restaura la calidez solicitada por Windows. Cerrar la ventana mantiene el programa en la bandeja." Style="{StaticResource Muted}" Margin="10,2,0,14" LineHeight="20"/><Button Content="Abrir Luz nocturna de Windows ↗" Click="OpenWindows" HorizontalAlignment="Left"/></StackPanel></local:AngularPanel>
+      <local:AngularPanel><StackPanel><TextBlock Text="Color y restauración" Style="{StaticResource SectionTitle}"/><TextBlock Text="Al desactivar el control se vuelve gradualmente al color de Windows. Al pausar o salir, se restaura de inmediato. Cerrar la ventana mantiene el programa en la bandeja. La protección usa un auxiliar independiente para intentar recuperar el color tras un cierre inesperado." Style="{StaticResource Muted}" Margin="10,2,0,14" LineHeight="20"/><Button Content="Abrir Luz nocturna de Windows ↗" Click="OpenWindows" HorizontalAlignment="Left"/></StackPanel></local:AngularPanel>
      </StackPanel>
      <StackPanel x:Name="UpdatesView" Visibility="Collapsed">
       <local:AngularPanel Margin="0,0,0,17"><StackPanel>

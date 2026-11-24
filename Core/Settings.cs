@@ -35,6 +35,8 @@ public sealed class Settings
     public List<string> ExcludedApps { get; set; } = new();
     public bool PauseFullscreen { get; set; }
     public bool CheckUpdatesAtStartup { get; set; } = true;
+    public bool RecoverAfterCrash { get; set; } = true;
+    private bool recoveryNeedsBackup;
     public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NightLightControl");
     public static string FilePath => Path.Combine(Folder, "settings.json");
     [JsonIgnore] public Profile Current => Profiles[ActiveProfile];
@@ -50,28 +52,40 @@ public sealed class Settings
         if (ExcludedApps.Any(s => string.IsNullOrWhiteSpace(s) || s.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)) throw new InvalidDataException("Indica los nombres de aplicaciones separados por comas.");
     }
     public static Settings Load(out string? warning)
+        => Load(FilePath, out warning);
+    public static Settings Load(string path, out string? warning)
     {
         warning = null;
-        if (!File.Exists(FilePath)) return new();
+        if (!File.Exists(path)) return new();
         try
         {
-            var settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? throw new InvalidDataException("Configuración vacía.");
+            var settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path)) ?? throw new InvalidDataException("Configuración vacía.");
             settings.Validate(); return settings;
         }
         catch (Exception ex)
         {
-            string backup = FilePath + ".invalid-" + DateTime.Now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-            File.Copy(FilePath, backup, true);
-            warning = "Se conservó una copia de la configuración inválida: " + backup + "\n" + ex.Message;
-            return new();
+            var fallback = new Settings { recoveryNeedsBackup = true };
+            try { string backup = BackupInvalid(path); fallback.recoveryNeedsBackup = false; warning = "Se conservó una copia de la configuración inválida: " + backup + "\n" + ex.Message; }
+            catch (Exception backupError) { warning = "No se pudo leer ni respaldar la configuración. Se conservará el archivo original hasta poder respaldarlo.\n" + backupError.Message; }
+            return fallback;
         }
     }
-    public void Save()
+    private static string BackupInvalid(string path)
     {
-        Validate(); Directory.CreateDirectory(Folder);
-        string temp = FilePath + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, FilePath, true);
+        string backup = path + ".invalid-" + Guid.NewGuid().ToString("N"); File.Copy(path, backup, false); return backup;
+    }
+    public void Save() => Save(FilePath);
+    public void Save(string path)
+    {
+        Validate(); path = Path.GetFullPath(path); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (recoveryNeedsBackup && File.Exists(path)) { BackupInvalid(path); recoveryNeedsBackup = false; }
+        string temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temp, path, true);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
     }
     public static bool StartWithWindows
     {

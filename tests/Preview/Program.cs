@@ -47,6 +47,7 @@ internal static class Program
         ((Slider)root.FindName("TransitionSlider")).Value = 10;
         ((RadioButton)root.FindName("AutoMode")).IsChecked = true;
         ((CheckBox)root.FindName("UpdateStartupCheck")).IsChecked = true;
+        ((CheckBox)root.FindName("RecoveryCheck")).IsChecked = true;
         ((TextBlock)root.FindName("InstalledVersionText")).Text = "Versión instalada · " + Updates.CurrentVersionText;
         ((TextBlock)root.FindName("FooterVersionText")).Text = "●  Night Light Control v" + Updates.CurrentVersionText;
         var profiles = (ComboBox)root.FindName("ProfileBox"); profiles.ItemsSource = new[] { new Profile() }; profiles.SelectedIndex = 0;

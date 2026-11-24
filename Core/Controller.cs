@@ -9,13 +9,17 @@ namespace NightLightControl.Core;
 
 public sealed class Controller : IDisposable
 {
-    private readonly DisplayEngine engine = new();
-    private readonly Stopwatch clock = Stopwatch.StartNew();
-    private double lastSeconds, lastApplySeconds = -100;
-    private double lastConflictCheck = -100;
-    private bool fluxRunning;
+    private readonly IDisplayEngine engine;
+    private readonly Func<WindowsState> readNative;
+    private readonly Func<double> secondsNow;
+    private readonly Func<DateTimeOffset> localNow;
+    private readonly Func<bool> detectFlux;
+    private readonly Func<string?> foregroundBlock;
+    public Action<bool>? OwnershipChanged { get; set; }
+    public Action<string> ErrorLog { get; set; } = Log;
+    private double lastSeconds, lastApplySeconds = -100, lastConflictCheck = -100, lastErrorSeconds = -100;
+    private bool fluxRunning, needsRefresh = true, ownsColor;
     private int lastKelvin = -1;
-    private bool needsRefresh = true, wasBlocked, wasEnabled;
     private double? appliedStrength;
     public Settings Settings { get; }
     public DateTimeOffset? PauseUntil { get; private set; }
@@ -24,68 +28,83 @@ public sealed class Controller : IDisposable
     public string Backend { get; private set; } = "Windows nativo";
     public double TargetStrength { get; private set; }
     public double CurrentStrength => appliedStrength ?? 0;
-    public bool IsTransitioning => wasEnabled && appliedStrength.HasValue && Math.Abs(TargetStrength - appliedStrength.Value) > 0.02;
+    public bool IsApplying => ownsColor && LastError == null;
+    public bool IsFadingOut { get; private set; }
+    public bool IsTransitioning => ownsColor && appliedStrength.HasValue && Math.Abs(TargetStrength - appliedStrength.Value) > 0.001;
     public bool Available { get; private set; }
     public bool SessionLocked { get; set; }
     public bool Suspended { get; set; }
     public string? LastError { get; private set; }
-    public Controller(Settings settings) { Settings = settings; }
+
+    public Controller(Settings settings) : this(settings, new DisplayEngine(), WindowsSettings.Read, Stopwatch.StartNew()) { }
+    private Controller(Settings settings, IDisplayEngine engine, Func<WindowsState> readNative, Stopwatch clock)
+        : this(settings, engine, readNative, () => clock.Elapsed.TotalSeconds, () => DateTimeOffset.Now, IsFluxRunning) { }
+
+    // Test the actual state machine with a fake display and clock, without accessing Windows.
+    public Controller(Settings settings, IDisplayEngine engine, Func<WindowsState> readNative,
+        Func<double> secondsNow, Func<DateTimeOffset> localNow, Func<bool> detectFlux, Func<string?>? foregroundBlock = null)
+    {
+        Settings = settings; this.engine = engine; this.readNative = readNative;
+        this.secondsNow = secondsNow; this.localNow = localNow; this.detectFlux = detectFlux;
+        this.foregroundBlock = foregroundBlock ?? ActiveExclusion;
+    }
     public void Refresh() { needsRefresh = true; lastApplySeconds = -100; }
-    public void Pause(TimeSpan duration) { PauseUntil = DateTimeOffset.UtcNow.Add(duration); }
+    public void Pause(TimeSpan duration) { PauseUntil = localNow().Add(duration); }
     public void Resume() { PauseUntil = null; }
     public void Tick()
     {
-        double seconds = clock.Elapsed.TotalSeconds, elapsed = Math.Clamp(seconds - lastSeconds, 0, 2); lastSeconds = seconds;
-        if (LastError != null && seconds - lastApplySeconds < 5) return;
+        double seconds = secondsNow(), elapsed = Math.Clamp(seconds - lastSeconds, 0, 2); lastSeconds = seconds;
+        if (LastError != null && seconds - lastErrorSeconds < 5) return;
         try
         {
+            if (SessionLocked || Suspended) { Restore(); Status = "En pausa: sesión suspendida"; LastError = null; return; }
             if (needsRefresh)
             {
                 engine.Refresh(); Displays = engine.Description; Backend = engine.Backend; Available = true; needsRefresh = false;
             }
-            if (!Settings.Enabled)
-            {
-                if (!wasBlocked && engine.HasApplied) Restore();
-                wasBlocked = true; wasEnabled = false; appliedStrength = null; Status = "Control desactivado"; LastError = null;
-                return;
-            }
-            var native = WindowsSettings.Read();
-            var now = DateTime.Now;
-            TargetStrength = Settings.Automatic ? Curve.Evaluate(Settings.Current.Points, now.TimeOfDay.TotalMinutes) : Settings.ManualStrength;
-            if (seconds - lastConflictCheck >= 3)
-            {
-                var fluxProcesses = Process.GetProcessesByName("flux"); fluxRunning = fluxProcesses.Length != 0;
-                foreach (var process in fluxProcesses) process.Dispose(); lastConflictCheck = seconds;
-            }
-            if (PauseUntil <= DateTimeOffset.UtcNow) PauseUntil = null;
-            string? exclusion = ActiveExclusion();
-            string? block = !Settings.Enabled ? "Control desactivado" : SessionLocked || Suspended ? "En pausa: sesión suspendida" : fluxRunning ? "En pausa: f.lux está abierto" : native.Preview ? "En pausa: ajustando Luz nocturna en Windows" : PauseUntil.HasValue ? "En pausa hasta las " + PauseUntil.Value.ToLocalTime().ToString("HH:mm") : exclusion;
-            if (block != null)
-            {
-                // Do not overwrite a Windows slider preview. Release our runtime tint otherwise.
-                if (!wasBlocked && engine.HasApplied && !native.Preview) Restore();
-                wasBlocked = true; wasEnabled = false; appliedStrength = null;
-                Status = block; LastError = null; return;
-            }
-            if (wasBlocked || !wasEnabled || appliedStrength == null) appliedStrength = Math.Clamp((6500 - native.Kelvin) / 53.0, 0, 100);
-            wasBlocked = false; wasEnabled = true;
-            double maxStep = elapsed * 100 / Settings.TransitionSeconds;
-            appliedStrength += Math.Clamp(TargetStrength - appliedStrength.Value, -maxStep, maxStep);
-            int kelvin = Curve.Kelvin(appliedStrength.Value);
+            if (!Settings.Enabled && !ownsColor) { Status = "Control desactivado"; LastError = null; return; }
+            var native = readNative(); var now = localNow();
+            if (seconds - lastConflictCheck >= 3) { fluxRunning = detectFlux(); lastConflictCheck = seconds; }
+            if (PauseUntil <= now) PauseUntil = null;
+            // Never overwrite Windows' own strength-slider preview, even during disable or exit.
+            if (native.Preview) { ReleaseOwnership(); Status = "En pausa: ajustando Luz nocturna en Windows"; LastError = null; return; }
+            string? block = fluxRunning ? "En pausa: f.lux está abierto" : PauseUntil.HasValue ? "En pausa hasta las " + PauseUntil.Value.ToLocalTime().ToString("HH:mm") : foregroundBlock();
+            if (block != null) { Restore(); Status = block; LastError = null; return; }
+
+            bool wasFadingOut = IsFadingOut;
+            IsFadingOut = !Settings.Enabled;
+            TargetStrength = IsFadingOut ? Strength(native.Kelvin) : Settings.Automatic ? Curve.Evaluate(Settings.Current.Points, now.TimeOfDay.TotalMinutes) : Settings.ManualStrength;
+            bool starting = !ownsColor;
+            if (starting) appliedStrength = Strength(native.Kelvin);
+            // State changes start from the displayed color, including re-enable during fade-out.
+            if (starting || wasFadingOut != IsFadingOut) elapsed = 0;
+            double step = elapsed * 100 / Settings.TransitionSeconds;
+            double current = appliedStrength!.Value;
+            current += Math.Clamp(TargetStrength - current, -step, step); appliedStrength = current;
+            int kelvin = Curve.Kelvin(current);
+            OwnershipChanged?.Invoke(true);
+            ownsColor = true; // Restore even when a native call succeeds on only some displays.
             if (kelvin != lastKelvin || seconds - lastApplySeconds >= 10)
             {
                 engine.Apply(kelvin); lastKelvin = kelvin; lastApplySeconds = seconds;
             }
-            Status = (Settings.Automatic ? "Siguiendo tu curva" : "Intensidad manual") + (native.ScheduleEnabled ? " · horario de Windows activo" : "");
-            LastError = null;
+            if (IsFadingOut && kelvin == native.Kelvin) { Restore(); Status = "Control desactivado"; }
+            else Status = IsFadingOut ? "Desactivando suavemente…" : (Settings.Automatic ? "Siguiendo tu curva" : "Intensidad manual") + (native.ScheduleEnabled ? " · horario de Windows activo" : "");
+            Available = true; LastError = null;
         }
         catch (Exception ex)
         {
-            LastError = ex.Message; Status = "No se pudo aplicar: " + ex.Message; Available = false; needsRefresh = true; lastApplySeconds = seconds;
-            Log(ex.ToString());
-            try { Restore(); } catch (Exception restore) { Log("Restauración pendiente: " + restore); }
-            appliedStrength = null; wasEnabled = false;
+            ErrorLog(ex.ToString()); Available = false; needsRefresh = true; lastErrorSeconds = seconds;
+            try { Restore(); } catch (Exception restore) { ErrorLog("Restauración pendiente: " + restore); }
+            LastError = ex.Message; Status = "No se pudo aplicar: " + ex.Message;
         }
+    }
+    private static double Strength(int kelvin) => Math.Clamp((6500 - kelvin) / 53.0, 0, 100);
+    private void ReleaseOwnership() { OwnershipChanged?.Invoke(false); ownsColor = false; appliedStrength = null; IsFadingOut = false; lastKelvin = -1; }
+    private static bool IsFluxRunning()
+    {
+        var processes = Process.GetProcessesByName("flux");
+        try { return processes.Length != 0; } finally { foreach (var p in processes) p.Dispose(); }
     }
     private string? ActiveExclusion()
     {
@@ -95,7 +114,7 @@ public sealed class Controller : IDisposable
         try
         {
             using var p = Process.GetProcessById((int)pid);
-            if (Settings.ExcludedApps.Any(s => string.Equals(System.IO.Path.GetFileNameWithoutExtension(s), p.ProcessName, StringComparison.OrdinalIgnoreCase))) return "En pausa: " + p.ProcessName;
+            if (Settings.ExcludedApps.Any(s => string.Equals(Path.GetFileNameWithoutExtension(s), p.ProcessName, StringComparison.OrdinalIgnoreCase))) return "En pausa: " + p.ProcessName;
             if (Settings.PauseFullscreen && pid != Environment.ProcessId && p.ProcessName is not "explorer" and not "dwm" && GetWindowRect(window, out var rect))
             {
                 var monitor = System.Windows.Forms.Screen.FromHandle(window).Bounds;
@@ -107,12 +126,13 @@ public sealed class Controller : IDisposable
     }
     public void Restore()
     {
-        if (!engine.HasApplied) return;
-        engine.Apply(WindowsSettings.Read().Kelvin); lastKelvin = -1;
+        if (!ownsColor) return;
+        if (engine.HasApplied) { var native = readNative(); if (!native.Preview) engine.Apply(native.Kelvin); }
+        ReleaseOwnership();
     }
     public bool TryRestore()
     {
-        try { Restore(); return true; } catch (Exception ex) { LastError = ex.Message; Log("Restauración: " + ex); return false; }
+        try { Restore(); return true; } catch (Exception ex) { LastError = ex.Message; ErrorLog("Restauración: " + ex); return false; }
     }
     public void Dispose() { TryRestore(); engine.Dispose(); }
     public static void Log(string value)
